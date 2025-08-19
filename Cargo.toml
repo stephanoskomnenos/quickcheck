@@ -14,7 +14,7 @@ exclude = ["/Makefile", "/ctags.rust", "/session.vim"]
 edition = "2021"
 
 [workspace]
-members = ["quickcheck_macros"]
+members = ["quickcheck_macros", "quickcheck_rpc"]
 
 [features]
 default = ["regex", "use_logging"]

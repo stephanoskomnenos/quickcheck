@@ -1,0 +1,16 @@
+[package]
+name = "quickcheck_rpc"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "quickcheck_rpc"
+path = "src/lib.rs"
+
+[dependencies]
+prost = "0.14.1"
+tonic = "0.14.1"
+tonic-prost = "0.14.1"
+
+[build-dependencies]
+tonic-prost-build = "0.14.1"
