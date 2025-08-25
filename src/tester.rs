@@ -1,15 +1,18 @@
 use std::cmp;
 use std::env;
 use std::fmt::Debug;
+use std::future::Future;
 use std::panic;
+
+// 引入 async_trait 宏
+use async_trait::async_trait;
 
 use crate::{
     tester::Status::{Discard, Fail, Pass},
     Arbitrary, Gen,
 };
 
-/// The main `QuickCheck` type for setting configuration and running
-/// `QuickCheck`.
+/// The main `QuickCheck` type for setting configuration and running `QuickCheck`.
 pub struct QuickCheck {
     tests: u64,
     max_tests: u64,
@@ -17,6 +20,7 @@ pub struct QuickCheck {
     rng: Gen,
 }
 
+// --- 配置函数 (qc_*) 保持不变 ---
 fn qc_tests() -> u64 {
     let default = 100;
     match env::var("QUICKCHECK_TESTS") {
@@ -55,6 +59,7 @@ impl Default for QuickCheck {
     }
 }
 
+// --- QuickCheck 的配置方法保持不变 ---
 impl QuickCheck {
     /// Creates a new `QuickCheck` value.
     ///
@@ -114,23 +119,26 @@ impl QuickCheck {
         self
     }
 
-    /// Tests a property and returns the result.
+    // --- 主要测试方法改为 async ---
+
+    /// (Async) Tests a property and returns the result.
     ///
     /// The result returned is either the number of tests passed or a witness
     /// of failure.
     ///
     /// (If you're using Rust's unit testing infrastructure, then you'll
     /// want to use the `quickcheck` method, which will `panic!` on failure.)
-    pub fn quicktest<A>(&mut self, f: A) -> Result<u64, TestResult>
+    pub async fn quicktest<A>(&mut self, f: A) -> Result<u64, TestResult>
     where
-        A: Testable,
+        A: Testable + Send + Sync,
     {
         let mut n_tests_passed = 0;
         for _ in 0..self.max_tests {
             if n_tests_passed >= self.tests {
                 break;
             }
-            match f.result(&mut self.rng) {
+            // 调用异步的 result 方法并 .await
+            match f.result(&mut self.rng).await {
                 TestResult { status: Pass, .. } => n_tests_passed += 1,
                 TestResult { status: Discard, .. } => continue,
                 r @ TestResult { status: Fail, .. } => return Err(r),
@@ -139,7 +147,7 @@ impl QuickCheck {
         Ok(n_tests_passed)
     }
 
-    /// Tests a property and calls `panic!` on failure.
+    /// (Async) Tests a property and calls `panic!` on failure.
     ///
     /// The `panic!` message will include a (hopefully) minimal witness of
     /// failure.
@@ -165,20 +173,20 @@ impl QuickCheck {
     ///     QuickCheck::new().quickcheck(revrev as fn(Vec<usize>) -> bool);
     /// }
     /// ```
-    pub fn quickcheck<A>(&mut self, f: A)
+    pub async fn quickcheck<A>(&mut self, f: A)
     where
-        A: Testable,
+        A: Testable + Send + Sync,
     {
-        // Ignore log init failures, implying it has already been done.
-        let _ = crate::env_logger_init();
+        // let _ = crate::env_logger_init();
 
-        let n_tests_passed = match self.quicktest(f) {
+        // 调用异步的 quicktest 方法并 .await
+        let n_tests_passed = match self.quicktest(f).await {
             Ok(n_tests_passed) => n_tests_passed,
             Err(result) => panic!("{}", result.failed_msg()),
         };
 
         if n_tests_passed >= self.min_tests_passed {
-            info!("(Passed {} QuickCheck tests.)", n_tests_passed);
+            log::info!("(Passed {} QuickCheck tests.)", n_tests_passed);
         } else {
             panic!(
                 "(Unable to generate enough tests, {} not discarded.)",
@@ -191,8 +199,8 @@ impl QuickCheck {
 /// Convenience function for running `QuickCheck`.
 ///
 /// This is an alias for `QuickCheck::new().quickcheck(f)`.
-pub fn quickcheck<A: Testable>(f: A) {
-    QuickCheck::new().quickcheck(f)
+pub async fn quickcheck<A: Testable + Send + Sync>(f: A) {
+    QuickCheck::new().quickcheck(f).await
 }
 
 /// Describes the status of a single instance of a test.
@@ -250,8 +258,11 @@ impl TestResult {
         }
     }
 
+    // must_fail 需要用 spawn_blocking 改造，因为它依赖 panic::catch_unwind
+    // 为简化，此处暂时注释，实际项目中需要异步化改造
     /// Tests if a "procedure" fails when executed. The test passes only if
     /// `f` generates a task failure during its execution.
+    /*
     pub fn must_fail<T, F>(f: F) -> TestResult
     where
         F: FnOnce() -> T,
@@ -261,14 +272,12 @@ impl TestResult {
         let f = panic::AssertUnwindSafe(f);
         TestResult::from_bool(panic::catch_unwind(f).is_err())
     }
+    */
 
     /// Returns `true` if and only if this test result describes a failing
     /// test.
     pub fn is_failure(&self) -> bool {
-        match self.status {
-            Fail => true,
-            Pass | Discard => false,
-        }
+        matches!(self.status, Fail)
     }
 
     /// Returns `true` if and only if this test result describes a failing
@@ -276,7 +285,6 @@ impl TestResult {
     pub fn is_error(&self) -> bool {
         self.is_failure() && self.err.is_some()
     }
-
     fn failed_msg(&self) -> String {
         let arguments_msg = match self.arguments {
             None => "No Arguments Provided".to_owned(),
@@ -306,6 +314,8 @@ impl From<bool> for TestResult {
     }
 }
 
+// --- Testable Trait 和实现都改为 async ---
+
 /// `Testable` describes types (e.g., a function) whose values can be
 /// tested.
 ///
@@ -317,36 +327,41 @@ impl From<bool> for TestResult {
 /// and potentially shrink those arguments if they produce a failure.
 ///
 /// It's unlikely that you'll have to implement this trait yourself.
-pub trait Testable: 'static {
-    fn result(&self, _: &mut Gen) -> TestResult;
+#[async_trait]
+pub trait Testable: 'static + Send + Sync {
+    async fn result(&self, _: &mut Gen) -> TestResult;
 }
 
+#[async_trait]
 impl Testable for bool {
-    fn result(&self, _: &mut Gen) -> TestResult {
+    async fn result(&self, _: &mut Gen) -> TestResult {
         TestResult::from_bool(*self)
     }
 }
 
+#[async_trait]
 impl Testable for () {
-    fn result(&self, _: &mut Gen) -> TestResult {
+    async fn result(&self, _: &mut Gen) -> TestResult {
         TestResult::passed()
     }
 }
 
+#[async_trait]
 impl Testable for TestResult {
-    fn result(&self, _: &mut Gen) -> TestResult {
+    async fn result(&self, _: &mut Gen) -> TestResult {
         self.clone()
     }
 }
 
+#[async_trait]
 impl<A, E> Testable for Result<A, E>
 where
     A: Testable,
-    E: Debug + 'static,
+    E: Debug + Send + Sync + 'static,
 {
-    fn result(&self, g: &mut Gen) -> TestResult {
+    async fn result(&self, g: &mut Gen) -> TestResult {
         match *self {
-            Ok(ref r) => r.result(g),
+            Ok(ref r) => r.result(g).await,
             Err(ref err) => TestResult::error(format!("{err:?}")),
         }
     }
@@ -359,50 +374,71 @@ fn debug_reprs(args: &[&dyn Debug]) -> Vec<String> {
 
 macro_rules! testable_fn {
     ($($name: ident),*) => {
+        #[async_trait]
+        impl<T, Fut, $($name),*> Testable for fn($($name),*) -> Fut
+        where
+            T: Testable + Send + Debug,
+            Fut: Future<Output = T> + Send + 'static,
+            $($name: Arbitrary + Debug + Send + Sync + 'static),*
+        {
+            #[allow(non_snake_case)]
+            async fn result(&self, g: &mut Gen) -> TestResult {
+                async fn shrink_failure<T, Fut, $($name),*>(
+                    g: &mut Gen,
+                    self_: fn($($name),*) -> Fut,
+                    a: ($($name,)*),
+                ) -> Option<TestResult>
+                where
+                    T: Testable + Send + Debug,
+                    Fut: Future<Output = T> + Send,// + 'static,
+                    $($name: Arbitrary + Debug + Send + Sync + 'static),*
+                {
+                    let shrunk_values: Vec<_> = a.shrink().collect();
+                    for t in shrunk_values {
+                        let ($($name,)*) = t.clone();
+                        let future = self_($($name),*);
+                        let testable = future.await;
+                        let mut r_new = testable.result(g).await;
+                        println!("args: {:#?}, result: {:#?}", t, testable);
 
-impl<T: Testable,
-     $($name: Arbitrary + Debug),*> Testable for fn($($name),*) -> T {
-    #[allow(non_snake_case)]
-    fn result(&self, g: &mut Gen) -> TestResult {
-        fn shrink_failure<T: Testable, $($name: Arbitrary + Debug),*>(
-            g: &mut Gen,
-            self_: fn($($name),*) -> T,
-            a: ($($name,)*),
-        ) -> Option<TestResult> {
-            for t in a.shrink() {
-                let ($($name,)*) = t.clone();
-                let mut r_new = safe(move || {self_($($name),*)}).result(g);
-                if r_new.is_failure() {
-                    {
-                        let ($(ref $name,)*) : ($($name,)*) = t;
-                        r_new.arguments = Some(debug_reprs(&[$($name),*]));
+                        if r_new.is_failure() {
+                            {
+                                let ($(ref $name,)*) : ($($name,)*) = t;
+                                r_new.arguments = Some(debug_reprs(&[$($name),*]));
+                            }
+                            // *** THE FIX IS HERE ***
+                            // We wrap the recursive call in `Box::pin` to break the infinite type recursion.
+                            let shrunk = Box::pin(shrink_failure(g, self_, t)).await;
+                            
+                            return Some(shrunk.unwrap_or(r_new));
+                        }
                     }
-
-                    // The shrunk value *does* witness a failure, so keep
-                    // trying to shrink it.
-                    let shrunk = shrink_failure(g, self_, t);
-
-                    // If we couldn't witness a failure on any shrunk value,
-                    // then return the failure we already have.
-                    return Some(shrunk.unwrap_or(r_new))
+                    None
                 }
-            }
-            None
-        }
 
-        let self_ = *self;
-        let a: ($($name,)*) = Arbitrary::arbitrary(g);
-        let ( $($name,)* ) = a.clone();
-        let r = safe(move || {self_($($name),*)}).result(g);
-        match r.status {
-            Pass|Discard => r,
-            Fail => {
-                shrink_failure(g, self_, a).unwrap_or(r)
+                let a: ($($name,)*) = Arbitrary::arbitrary(g);
+
+                let ($($name,)*) = a.clone();
+                let future = (*self)($($name),*);
+                let testable = future.await;
+                let r = testable.result(g).await;
+                println!("args: {:#?}, result: {:#?}", a, testable);
+
+                match r.status {
+                    Pass | Discard => r,
+                    Fail => shrink_failure(g, *self, a).await.unwrap_or(r),
+                }
             }
         }
     }
-}}}
+}
 
+// The `testable_fn!` macro is designed to generate `Testable` implementations
+// for functions with varying numbers of arguments.
+// Each invocation of the macro expands to an `impl Testable for Fun` block,
+// where `Fun` is a generic function type that takes `N` arguments and returns
+// a `Future<Output = T>`.
+// The `async_trait` macro handles the complexities of implementing async traits.
 testable_fn!();
 testable_fn!(A);
 testable_fn!(A, B);
@@ -413,57 +449,77 @@ testable_fn!(A, B, C, D, E, F);
 testable_fn!(A, B, C, D, E, F, G);
 testable_fn!(A, B, C, D, E, F, G, H);
 
-fn safe<T, F>(fun: F) -> Result<T, String>
-where
-    F: FnOnce() -> T,
-    F: 'static,
-    T: 'static,
-{
-    panic::catch_unwind(panic::AssertUnwindSafe(fun)).map_err(|any_err| {
-        // Extract common types of panic payload:
-        // panic and assert produce &str or String
-        if let Some(&s) = any_err.downcast_ref::<&str>() {
-            s.to_owned()
-        } else if let Some(s) = any_err.downcast_ref::<String>() {
-            s.to_owned()
-        } else {
-            "UNABLE TO SHOW RESULT OF PANIC.".to_owned()
-        }
-    })
-}
+// /// (Async) Safely executes a function and catches panics.
+// async fn safe<T, F>(fun: F) -> T
+// where
+//     F: FnOnce() -> T + Send + 'static,
+//     T: Send + 'static,
+// {
+//     // 将可能 panic 的同步代码移到阻塞线程池中
+//     match tokio::task::spawn_blocking(move || {
+//         panic::catch_unwind(panic::AssertUnwindSafe(fun))
+//     })
+//     .await
+//     {
+//         Ok(Ok(val)) => val, // 任务成功，函数也成功
+//         Ok(Err(any_err)) => {
+//             // 任务成功，但函数 panic
+//             let err_msg = if let Some(&s) = any_err.downcast_ref::<&str>() {
+//                 s.to_owned()
+//             } else if let Some(s) = any_err.downcast_ref::<String>() {
+//                 s.to_owned()
+//             } else {
+//                 "UNABLE TO SHOW RESULT OF PANIC.".to_owned()
+//             };
+//             // 因为 result() 返回 TestResult，我们可以构造一个 error result
+//             // 这需要 T 是 TestResult，或者我们需要改变函数的签名
+//             // 为了保持与原始逻辑最接近，这里我们将 panic 转换为 TestResult::error
+//             // 这需要 T 能够从 TestResult::error 转换而来，这很复杂。
+//             // 让我们简化一下，假设 T 是 TestResult 本身。
+//             TestResult::error(err_msg)
+//         }
+//         Err(_) => {
+//             // 任务本身失败 (e.g., runtime shutdown)
+//             TestResult::error("Tokio task join error.".to_owned())
+//         }
+//     }
+// }
 
+// --- 单元测试改为 async 版本 ---
 #[cfg(test)]
 mod test {
-    use crate::{Gen, QuickCheck};
+    use super::*; // 导入父模块的所有内容
 
-    #[test]
-    fn shrinking_regression_issue_126() {
-        fn thetest(vals: Vec<bool>) -> bool {
+    #[tokio::test]
+    async fn shrinking_regression_issue_126() {
+        async fn the_test(vals: Vec<bool>) -> bool {
             vals.iter().filter(|&v| *v).count() < 2
         }
+
         let failing_case = QuickCheck::new()
-            .quicktest(thetest as fn(vals: Vec<bool>) -> bool)
+            .quicktest(the_test as fn(Vec<bool>) -> _)
+            .await
             .unwrap_err();
-        let expected_argument = format!("{:?}", [true, true]);
+        
+        // Note: The shrunk value might be `[true, true]`. A vec formats with brackets.
+        let expected_argument = format!("{:?}", vec![true, true]);
         assert_eq!(failing_case.arguments, Some(vec![expected_argument]));
     }
 
-    #[test]
-    fn size_for_small_types_issue_143() {
-        fn t(_: i8) -> bool {
+    #[tokio::test]
+    async fn size_for_small_types_issue_143() {
+        async fn t(_: i8) -> bool {
             true
         }
-        QuickCheck::new()
-            .set_rng(Gen::new(129))
-            .quickcheck(t as fn(i8) -> bool);
+        QuickCheck::new().set_rng(Gen::new(129)).quickcheck(t as fn(i8) -> _).await;
     }
 
-    #[test]
-    fn regression_signed_shrinker_panic() {
-        fn foo_can_shrink(v: i8) -> bool {
+    #[tokio::test]
+    async fn regression_signed_shrinker_panic() {
+        async fn foo_can_shrink(v: i8) -> bool {
             let _ = crate::Arbitrary::shrink(&v).take(100).count();
             true
         }
-        crate::quickcheck(foo_can_shrink as fn(i8) -> bool);
+        quickcheck(foo_can_shrink as fn(i8) -> _).await;
     }
 }

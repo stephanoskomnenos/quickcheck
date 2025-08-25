@@ -25,6 +25,9 @@ regex = ["env_logger/regex"]
 name = "quickcheck"
 
 [dependencies]
+async-trait = "0.1.89"
 env_logger = { version = "0.11", default-features = false, optional = true }
+futures = "0.3.31"
 log = { version = "0.4", optional = true }
 rand = { version = "0.9", default-features = false, features = ["os_rng", "small_rng"] }
+tokio = { version = "1.47.1", features = ["full"] }

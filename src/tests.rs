@@ -6,48 +6,50 @@ use std::path::PathBuf;
 
 use super::{quickcheck, Gen, QuickCheck, TestResult};
 
-#[test]
-fn prop_oob() {
-    fn prop() -> bool {
+#[tokio::test]
+async fn prop_oob() {
+    async fn prop() -> bool {
         let zero: Vec<bool> = vec![];
-        zero[0]
+        zero[0] // This will panic
     }
-    if let Ok(n) = QuickCheck::new().quicktest(prop as fn() -> bool) {
+    // quicktest is now async and must be awaited.
+    if let Ok(n) = QuickCheck::new().quicktest(prop as fn() -> _).await {
         panic!(
-            "prop_oob should fail with a runtime error \
-            but instead it passed {} tests.",
+            "prop_oob should fail with a runtime error but instead it passed {} tests.",
             n
         );
     }
 }
 
-#[test]
-fn prop_reverse_reverse() {
-    fn prop(xs: Vec<usize>) -> bool {
+#[tokio::test]
+async fn prop_reverse_reverse() {
+    async fn prop(xs: Vec<usize>) -> bool {
         let rev: Vec<_> = xs.clone().into_iter().rev().collect();
         let revrev: Vec<_> = rev.into_iter().rev().collect();
         xs == revrev
     }
-    quickcheck(prop as fn(Vec<usize>) -> bool);
+    quickcheck(prop as fn(Vec<usize>) -> _).await;
 }
 
+// The quickcheck! macro now generates async tests.
+// The properties themselves must be declared as `async fn`.
 quickcheck! {
-    fn prop_reverse_reverse_macro(xs: Vec<usize>) -> bool {
+    async fn prop_reverse_reverse_macro(xs: Vec<usize>) -> bool {
         let rev: Vec<_> = xs.clone().into_iter().rev().collect();
         let revrev: Vec<_> = rev.into_iter().rev().collect();
         xs == revrev
     }
 
     #[should_panic]
-    fn prop_macro_panic(_x: u32) -> bool {
+    async fn prop_macro_panic(_x: u32) -> bool {
         assert!(false);
         false
     }
 }
 
-#[test]
-fn reverse_single() {
-    fn prop(xs: Vec<usize>) -> TestResult {
+#[tokio::test]
+async fn reverse_single() {
+    async fn prop(xs: Vec<usize>) -> TestResult {
         if xs.len() != 1 {
             TestResult::discard()
         } else {
@@ -56,12 +58,12 @@ fn reverse_single() {
             )
         }
     }
-    quickcheck(prop as fn(Vec<usize>) -> TestResult);
+    quickcheck(prop as fn(Vec<usize>) -> _).await;
 }
 
-#[test]
-fn reverse_app() {
-    fn prop(xs: Vec<usize>, ys: Vec<usize>) -> bool {
+#[tokio::test]
+async fn reverse_app() {
+    async fn prop(xs: Vec<usize>, ys: Vec<usize>) -> bool {
         let mut app = xs.clone();
         app.extend(ys.iter().copied());
         let app_rev: Vec<usize> = app.into_iter().rev().collect();
@@ -72,24 +74,24 @@ fn reverse_app() {
 
         app_rev == rev_app
     }
-    quickcheck(prop as fn(Vec<usize>, Vec<usize>) -> bool);
+    quickcheck(prop as fn(Vec<usize>, Vec<usize>) -> _).await;
 }
 
-#[test]
-fn max() {
-    fn prop(x: isize, y: isize) -> TestResult {
+#[tokio::test]
+async fn max() {
+    async fn prop(x: isize, y: isize) -> TestResult {
         if x > y {
             TestResult::discard()
         } else {
             TestResult::from_bool(::std::cmp::max(x, y) == y)
         }
     }
-    quickcheck(prop as fn(isize, isize) -> TestResult);
+    quickcheck(prop as fn(isize, isize) -> _).await;
 }
 
-#[test]
-fn sort() {
-    fn prop(mut xs: Vec<isize>) -> bool {
+#[tokio::test]
+async fn sort() {
+    async fn prop(mut xs: Vec<isize>) -> bool {
         xs.sort_unstable();
         for i in xs.windows(2) {
             if i[0] > i[1] {
@@ -98,14 +100,12 @@ fn sort() {
         }
         true
     }
-    quickcheck(prop as fn(Vec<isize>) -> bool);
+    quickcheck(prop as fn(Vec<isize>) -> _).await;
 }
 
+// Helper functions `sieve` and `is_prime` do not need to be async.
 fn sieve(n: usize) -> Vec<usize> {
-    if n <= 1 {
-        return vec![];
-    }
-
+    if n <= 1 { return vec![]; }
     let mut marked = vec![false; n + 1];
     marked[0] = true;
     marked[1] = true;
@@ -115,176 +115,153 @@ fn sieve(n: usize) -> Vec<usize> {
             marked[i] = true;
         }
     }
-    marked
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &m)| if m { None } else { Some(i) })
-        .collect()
+    marked.iter().enumerate().filter_map(|(i, &m)| if m { None } else { Some(i) }).collect()
 }
 
 fn is_prime(n: usize) -> bool {
     n != 0 && n != 1 && (2..).take_while(|i| i * i <= n).all(|i| n % i != 0)
 }
 
-#[test]
+#[tokio::test]
 #[should_panic]
-fn sieve_not_prime() {
-    fn prop_all_prime(n: u8) -> bool {
+async fn sieve_not_prime() {
+    async fn prop_all_prime(n: u8) -> bool {
         sieve(n as usize).into_iter().all(is_prime)
     }
-    quickcheck(prop_all_prime as fn(u8) -> bool);
+    quickcheck(prop_all_prime as fn(u8) -> _).await;
 }
 
-#[test]
+#[tokio::test]
 #[should_panic]
-fn sieve_not_all_primes() {
-    fn prop_prime_iff_in_the_sieve(n: u8) -> bool {
+async fn sieve_not_all_primes() {
+    async fn prop_prime_iff_in_the_sieve(n: u8) -> bool {
         let n = n as usize;
         sieve(n) == (0..=n).filter(|&i| is_prime(i)).collect::<Vec<_>>()
     }
-    quickcheck(prop_prime_iff_in_the_sieve as fn(u8) -> bool);
+    quickcheck(prop_prime_iff_in_the_sieve as fn(u8) -> _).await;
 }
 
-#[test]
-fn testable_result() {
-    fn result() -> Result<bool, String> {
+#[tokio::test]
+async fn testable_result() {
+    async fn result() -> Result<bool, String> {
         Ok(true)
     }
-    quickcheck(result as fn() -> Result<bool, String>);
+    quickcheck(result as fn() -> _).await;
 }
 
-#[test]
+#[tokio::test]
 #[should_panic]
-fn testable_result_err() {
-    quickcheck(Err::<bool, i32> as fn(i32) -> Result<bool, i32>);
+async fn testable_result_err() {
+    async fn prop(_: i32) -> Result<bool, i32> {
+        Err(42) // A property that always returns an error
+    }
+    quickcheck(prop as fn(i32) -> _).await;
 }
 
-#[test]
-fn testable_unit() {
-    fn do_nothing() {}
-    quickcheck(do_nothing as fn());
+#[tokio::test]
+async fn testable_unit() {
+    async fn do_nothing() {}
+    quickcheck(do_nothing as fn() -> _).await;
 }
 
-#[test]
-fn testable_unit_panic() {
-    fn panic() {
+#[tokio::test]
+async fn testable_unit_panic() {
+    async fn panic() {
         panic!();
     }
-    assert!(QuickCheck::new().quicktest(panic as fn()).is_err());
+    assert!(QuickCheck::new().quicktest(panic as fn() -> _).await.is_err());
 }
 
-#[test]
-fn regression_issue_83() {
-    fn prop(_: u8) -> bool {
-        true
-    }
-    QuickCheck::new()
-        .set_rng(Gen::new(1024))
-        .quickcheck(prop as fn(u8) -> bool);
+#[tokio::test]
+async fn regression_issue_83() {
+    async fn prop(_: u8) -> bool { true }
+    QuickCheck::new().set_rng(Gen::new(1024)).quickcheck(prop as fn(u8) -> _).await;
 }
 
-#[test]
-fn regression_issue_83_signed() {
-    fn prop(_: i8) -> bool {
-        true
-    }
-    QuickCheck::new()
-        .set_rng(Gen::new(1024))
-        .quickcheck(prop as fn(i8) -> bool);
+#[tokio::test]
+async fn regression_issue_83_signed() {
+    async fn prop(_: i8) -> bool { true }
+    QuickCheck::new().set_rng(Gen::new(1024)).quickcheck(prop as fn(i8) -> _).await;
 }
 
-// Test that we can show the message after panic
-#[test]
+#[tokio::test]
 #[should_panic(expected = "foo")]
-fn panic_msg_1() {
-    fn prop() -> bool {
-        panic!("foo");
-    }
-    quickcheck(prop as fn() -> bool);
+async fn panic_msg_1() {
+    async fn prop() -> bool { panic!("foo"); }
+    quickcheck(prop as fn() -> _).await;
 }
 
-#[test]
+#[tokio::test]
 #[should_panic(expected = "foo")]
-fn panic_msg_2() {
-    fn prop() -> bool {
+async fn panic_msg_2() {
+    async fn prop() -> bool {
         assert!("foo" == "bar");
         true
     }
-    quickcheck(prop as fn() -> bool);
+    quickcheck(prop as fn() -> _).await;
 }
 
-#[test]
+#[tokio::test]
 #[should_panic(expected = "foo")]
-fn panic_msg_3() {
-    fn prop() -> bool {
+async fn panic_msg_3() {
+    async fn prop() -> bool {
         assert_eq!("foo", "bar");
         true
     }
-    quickcheck(prop as fn() -> bool);
+    quickcheck(prop as fn() -> _).await;
 }
 
-#[test]
+#[tokio::test]
 #[should_panic]
-fn regression_issue_107_hang() {
-    fn prop(a: Vec<u8>) -> bool {
-        a.contains(&1)
-    }
-    quickcheck(prop as fn(_) -> bool);
+async fn regression_issue_107_hang() {
+    async fn prop(a: Vec<u8>) -> bool { a.contains(&1) }
+    quickcheck(prop as fn(_) -> _).await;
 }
 
-#[test]
-#[should_panic(
-    expected = "(Unable to generate enough tests, 0 not discarded.)"
-)]
-fn all_tests_discarded_min_tests_passed_set() {
-    fn prop_discarded(_: u8) -> TestResult {
-        TestResult::discard()
-    }
-
+#[tokio::test]
+#[should_panic(expected = "(Unable to generate enough tests, 0 not discarded.)")]
+async fn all_tests_discarded_min_tests_passed_set() {
+    async fn prop_discarded(_: u8) -> TestResult { TestResult::discard() }
     QuickCheck::new()
         .tests(16)
         .min_tests_passed(8)
-        .quickcheck(prop_discarded as fn(u8) -> TestResult);
+        .quickcheck(prop_discarded as fn(u8) -> _)
+        .await;
 }
 
-#[test]
-fn all_tests_discarded_min_tests_passed_missing() {
-    fn prop_discarded(_: u8) -> TestResult {
-        TestResult::discard()
-    }
-
-    QuickCheck::new().quickcheck(prop_discarded as fn(u8) -> TestResult);
+#[tokio::test]
+async fn all_tests_discarded_min_tests_passed_missing() {
+    async fn prop_discarded(_: u8) -> TestResult { TestResult::discard() }
+    QuickCheck::new().quickcheck(prop_discarded as fn(u8) -> _).await;
 }
 
+// Properties inside the macro must also be `async`.
 quickcheck! {
-    /// The following is a very simplistic test, which only verifies
-    /// that our PathBuf::arbitrary does not panic.  Still, that's
-    /// something!  :)
-    fn pathbuf(_p: PathBuf) -> bool {
+    async fn pathbuf(_p: PathBuf) -> bool {
         true
     }
 
-    fn basic_hashset(_set: HashSet<u8>) -> bool {
+    async fn basic_hashset(_set: HashSet<u8>) -> bool {
         true
     }
 
-    fn basic_hashmap(_map: HashMap<u8, u8>) -> bool {
+    async fn basic_hashmap(_map: HashMap<u8, u8>) -> bool {
         true
     }
 
-    fn substitute_hashset(
+    async fn substitute_hashset(
         _set: HashSet<u8, BuildHasherDefault<DefaultHasher>>
     ) -> bool {
         true
     }
 
-    fn substitute_hashmap(
+    async fn substitute_hashmap(
         _map: HashMap<u8, u8, BuildHasherDefault<DefaultHasher>>
     ) -> bool {
         true
     }
 
-    fn cstring(_p: CString) -> bool {
+    async fn cstring(_p: CString) -> bool {
         true
     }
 }

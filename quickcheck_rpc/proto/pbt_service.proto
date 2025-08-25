@@ -18,7 +18,7 @@ message ExecuteRequest {
   // 这是最棘手的部分！我们使用 bytes 来存储序列化后的数据。
   // 序列化格式可以是 JSON、MessagePack 或甚至是原始 Protobuf。
   // JSON 是最简单和最灵活的起点。
-  bytes test_data_json = 2;
+  string test_data_json = 2;
 }
 
 // 测试执行的响应
