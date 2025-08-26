@@ -49,43 +49,43 @@ pub use crate::tester::{quickcheck, QuickCheck, TestResult, Testable};
 /// #     quickcheck::quickcheck(prop_reverse_reverse as fn(Vec<usize>) -> _).await;
 /// # }
 /// ```
-#[macro_export]
-macro_rules! quickcheck {
-    // Internal rule, no changes needed.
-    (@as_items $($i:item)*) => ($($i)*);
+// #[macro_export]
+// macro_rules! quickcheck {
+//     // Internal rule, no changes needed.
+//     (@as_items $($i:item)*) => ($($i)*);
 
-    // The macro's main matcher. It now accepts an optional `async` keyword.
-    {
-        $(
-            $(#[$m:meta])*
-            // The property function can now be `async fn`.
-            $(async)? fn $fn_name:ident($($arg_name:ident : $arg_ty:ty),*) -> $ret:ty {
-                $($code:tt)*
-            }
-        )*
-    } => (
-        // The expansion logic.
-        $crate::quickcheck! {
-            @as_items
-            $(
-                // The generated function is a standard test function.
-                // Modern `#[test]` supports `async fn`.
-                #[tokio::test]
-                $(#[$m])*
-                // The generated test function must be `async`.
-                async fn $fn_name() {
-                    // The inner property function is also defined as `async`.
-                    async fn prop($($arg_name: $arg_ty),*) -> $ret {
-                        $($code)*
-                    }
-                    // The call to the main quickcheck runner is now awaited,
-                    // and the property is cast to an async function pointer.
-                    $crate::quickcheck(prop as fn($($arg_ty),*) -> _).await;
-                }
-            )*
-        }
-    )
-}
+//     // The macro's main matcher. It now accepts an optional `async` keyword.
+//     {
+//         $(
+//             $(#[$m:meta])*
+//             // The property function can now be `async fn`.
+//             $(async)? fn $fn_name:ident($($arg_name:ident : $arg_ty:ty),*) -> $ret:ty {
+//                 $($code:tt)*
+//             }
+//         )*
+//     } => (
+//         // The expansion logic.
+//         $crate::quickcheck! {
+//             @as_items
+//             $(
+//                 // The generated function is a standard test function.
+//                 // Modern `#[test]` supports `async fn`.
+//                 #[tokio::test]
+//                 $(#[$m])*
+//                 // The generated test function must be `async`.
+//                 async fn $fn_name() {
+//                     // The inner property function is also defined as `async`.
+//                     async fn prop($($arg_name: $arg_ty),*) -> $ret {
+//                         $($code)*
+//                     }
+//                     // The call to the main quickcheck runner is now awaited,
+//                     // and the property is cast to an async function pointer.
+//                     $crate::quickcheck(prop as fn($($arg_ty),*) -> _).await;
+//                 }
+//             )*
+//         }
+//     )
+// }
 
 // Logging features remain the same.
 #[cfg(feature = "use_logging")]

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use serde::Deserialize;
 use tonic::{transport::Server, Request, Response, Status};
 use serde_json::Value;
 
@@ -10,32 +11,54 @@ use quickcheck_rpc::{
 use quickcheck::TestResult; // Use your internal TestResult
 
 // Define a type for our dispatchable property functions
-type PropertyFn = fn(Value) -> TestResult;
+type TestFn = fn(Value) -> TestResult;
 
 // --- Your actual test properties live here ---
 // They take a `serde_json::Value` and deserialize their own arguments.
 
-fn reverse_property(args_value: Value) -> TestResult {
-    let (xs,): (Vec<usize>,) = serde_json::from_value(args_value)
+#[derive(Deserialize, Debug, Clone)]
+struct ReverseArgs {
+    xs: Vec<usize>,
+}
+fn reverse_test(args_value: Value) -> TestResult {
+    let args: ReverseArgs = serde_json::from_value(args_value)
         .expect("Runner: failed to deserialize 'reverse' arguments");
+    let xs = args.xs;
 
     let rev: Vec<_> = xs.clone().into_iter().rev().collect();
     let revrev: Vec<_> = rev.into_iter().rev().collect();
     TestResult::from_bool(xs == revrev)
 }
 
+#[derive(Deserialize, Debug, Clone)]
+struct AddArgs {
+    a: i32,
+    b: i32,
+}
+
+fn add_test(args_value: Value) -> TestResult {
+    let args: AddArgs = serde_json::from_value(args_value)
+        .expect("Runner: failed to deserialize 'add' arguments");
+    let a = args.a;
+    let b = args.b;
+
+    let result = a + b;
+    println!("{:?} + {:?} = {:?}", a, b, result);
+    TestResult::from_bool(result == a + b)
+}
 // The gRPC service implementation
 #[derive(Default)]
 pub struct MyTestRunner {
-    properties: HashMap<String, PropertyFn>,
+    tests: HashMap<String, TestFn>,
 }
 
 impl MyTestRunner {
     fn new() -> Self {
-        let mut properties = HashMap::new();
+        let mut tests = HashMap::new();
         // Register the properties the runner knows how to execute
-        properties.insert("property_reverse_list".to_string(), reverse_property as PropertyFn);
-        Self { properties }
+        tests.insert("property_reverse_list".to_string(), reverse_test as TestFn);
+        tests.insert("property_add".to_string(), add_test as TestFn);
+        Self { tests }
     }
 }
 
@@ -49,7 +72,7 @@ impl TestRunner for MyTestRunner {
         println!("Runner: Received request for property '{}'", req.property_name);
 
         // Find the correct property function to run
-        let property_fn = self.properties.get(&req.property_name).ok_or_else(|| {
+        let property_fn = self.tests.get(&req.property_name).ok_or_else(|| {
             Status::not_found(format!("Property '{}' not found", req.property_name))
         })?;
 
