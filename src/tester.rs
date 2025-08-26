@@ -6,6 +6,7 @@ use std::panic;
 
 // 引入 async_trait 宏
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     tester::Status::{Discard, Fail, Pass},
@@ -206,7 +207,7 @@ pub async fn quickcheck<A: Testable + Send + Sync>(f: A) {
 /// Describes the status of a single instance of a test.
 ///
 /// All testable things must be capable of producing a `TestResult`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TestResult {
     status: Status,
     arguments: Option<Vec<String>>,
@@ -214,7 +215,7 @@ pub struct TestResult {
 }
 
 /// Whether a test has passed, failed or been discarded.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum Status {
     Pass,
     Fail,
@@ -379,7 +380,7 @@ macro_rules! testable_fn {
         where
             T: Testable + Send + Debug,
             Fut: Future<Output = T> + Send + 'static,
-            $($name: Arbitrary + Debug + Send + Sync + 'static),*
+            $($name: Arbitrary + Debug + Send + Sync + Serialize + 'static),*
         {
             #[allow(non_snake_case)]
             async fn result(&self, g: &mut Gen) -> TestResult {
@@ -391,7 +392,7 @@ macro_rules! testable_fn {
                 where
                     T: Testable + Send + Debug,
                     Fut: Future<Output = T> + Send,// + 'static,
-                    $($name: Arbitrary + Debug + Send + Sync + 'static),*
+                    $($name: Arbitrary + Debug + Send + Sync + Serialize + 'static),*
                 {
                     let shrunk_values: Vec<_> = a.shrink().collect();
                     for t in shrunk_values {
@@ -399,7 +400,9 @@ macro_rules! testable_fn {
                         let future = self_($($name),*);
                         let testable = future.await;
                         let mut r_new = testable.result(g).await;
-                        println!("args: {:#?}, result: {:#?}", t, testable);
+
+                        let args_json = serde_json::to_string(&t).unwrap();
+                        println!("args: {:#?}, result: {:#?}", args_json, testable);
 
                         if r_new.is_failure() {
                             {
@@ -422,7 +425,9 @@ macro_rules! testable_fn {
                 let future = (*self)($($name),*);
                 let testable = future.await;
                 let r = testable.result(g).await;
-                println!("args: {:#?}, result: {:#?}", a, testable);
+
+                let args_json = serde_json::to_string(&a).unwrap();
+                println!("args: {:#?}, result: {:#?}", args_json, testable);
 
                 match r.status {
                     Pass | Discard => r,

@@ -3,10 +3,10 @@ syntax = "proto3";
 package pbt_service;
 
 // 主服务，由各个语言的 Test Stub 实现
-service PropertyTester {
+service TestRunner {
   // 执行一个属性测试
   // Orchestrator 调用此方法
-  rpc ExecuteProperty(ExecuteRequest) returns (ExecuteResponse);
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
 }
 
 // 测试执行的请求
