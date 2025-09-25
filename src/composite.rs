@@ -3,11 +3,11 @@ use std::fmt::Debug;
 
 use crate::{Arbitrary, Gen, TestResult};
 
-/// A composite property that compares results from multiple implementations
+/// A composite property that compares results from multiple Property implementations
 pub struct CompositeProperty<P1, P2, F>
 where
-    P1: Property,
-    P2: Property,
+    P1: crate::tester::Property + Send + Sync,
+    P2: crate::tester::Property + Send + Sync,
     F: Fn(&P1::Args, P1::Return, P2::Return) -> bool + Send + Sync + 'static,
 {
     prop1: P1,
@@ -17,8 +17,8 @@ where
 
 impl<P1, P2, F> CompositeProperty<P1, P2, F>
 where
-    P1: Property,
-    P2: Property,
+    P1: crate::tester::Property + Send + Sync,
+    P2: crate::tester::Property + Send + Sync,
     F: Fn(&P1::Args, P1::Return, P2::Return) -> bool + Send + Sync + 'static,
 {
     pub fn new(prop1: P1, prop2: P2, comparison: F) -> Self {
@@ -33,8 +33,8 @@ where
 #[async_trait]
 impl<P1, P2, F> crate::tester::Testable for CompositeProperty<P1, P2, F>
 where
-    P1: Property + 'static,
-    P2: Property + 'static,
+    P1: crate::tester::Property + Send + Sync + 'static,
+    P2: crate::tester::Property + Send + Sync + 'static,
     P1::Args: Arbitrary + Debug + Clone + Send + Sync,
     P2::Args: From<P1::Args>,
     F: Fn(&P1::Args, P1::Return, P2::Return) -> bool + Send + Sync + 'static,
@@ -90,16 +90,19 @@ where
 }
 
 /// Helper function to execute a property and return its result
-async fn execute_property<P: Property + 'static>(
+async fn execute_property<P: crate::tester::Property + 'static>(
     prop: &P,
-    _args: &P::Args,
+    args: &P::Args,
 ) -> TestResult {
     use crate::tester::Testable;
-    prop.result(&mut crate::Gen::new(100)).await
+    
+    // Create a new generator for each execution to ensure consistent behavior
+    let mut g = Gen::new(100);
+    prop.result(&mut g).await
 }
 
 /// Helper function to extract the return value from a TestResult
-fn extract_return_value<P: Property>(result: &TestResult) -> Result<P::Return, String> {
+fn extract_return_value<P: crate::tester::Property>(result: &TestResult) -> Result<P::Return, String> {
     if let Some(ref json_str) = result.return_value {
         serde_json::from_str(json_str)
             .map_err(|e| format!("Failed to deserialize return value: {}", e))
@@ -107,9 +110,6 @@ fn extract_return_value<P: Property>(result: &TestResult) -> Result<P::Return, S
         Err("No return value available".to_string())
     }
 }
-
-/// Re-export the Property trait for convenience
-pub use crate::tester::Property;
 
 /// Macro for creating composite tests
 #[macro_export]

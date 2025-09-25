@@ -265,7 +265,7 @@
 //         true
 //     }
 // }
-use crate::{quickcheck, Arbitrary, Gen, tester::Property};
+use crate::{quickcheck, quickcheck_composite, tester::Property, Arbitrary, Gen};
 use serde::{Serialize, Deserialize};
 
 const ENDPOINT: &str = "http://[::1]:50051";
@@ -363,8 +363,10 @@ impl Property for AddTest {
 #[tokio::test]
 #[ignore]
 async fn test_the_add_property() {
-    let prop = AddTest { endpoint: ENDPOINT.to_string() };
-    quickcheck(prop).await;
+    let prop1 = AddTest { endpoint: ENDPOINT.to_string() };
+    let prop2 = AddTest { endpoint: ENDPOINT.to_string() };
+    // quickcheck(prop).await;
+    quickcheck_composite!(prop1, prop2, |args, res1, res2| { res1 == res2 && res1 == args.a + args.b });
 }
 
 // --- Test panic handling ---
@@ -382,8 +384,10 @@ impl Property for PanicTest {
 #[tokio::test]
 #[ignore] // Run this test manually when the gRPC runner is active.
 async fn test_panic_handling() {
-    let prop = PanicTest { endpoint: ENDPOINT.to_string() };
+    let prop1 = PanicTest { endpoint: ENDPOINT.to_string() };
+    let prop2 = PanicTest { endpoint: ENDPOINT.to_string() };
     // This should not panic at the test level - the panic should be caught by the runner
     // and treated as a test failure, which will then go through the shrink process
-    quickcheck(prop).await;
+    // quickcheck(prop).await;
+    quickcheck_composite!(prop1, prop2, |args, res1, res2| { res1 == res2 });
 }

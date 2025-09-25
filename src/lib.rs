@@ -117,4 +117,4 @@ mod tester;
 mod tests;
 
 // Re-export composite functionality
-pub use composite::{CompositeProperty, Property as CompositePropertyTrait};
+pub use composite::{CompositeProperty};
