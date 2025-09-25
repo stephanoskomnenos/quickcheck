@@ -365,7 +365,7 @@ impl Property for AddTest {
 async fn test_the_add_property() {
     let prop1 = AddTest { endpoint: ENDPOINT.to_string() };
     let prop2 = AddTest { endpoint: ENDPOINT.to_string() };
-    // quickcheck(prop).await;
+    // quickcheck(prop1).await;
     quickcheck_composite!(prop1, prop2, |args, res1, res2| { res1 == res2 && res1 == args.a + args.b });
 }
 
@@ -389,5 +389,5 @@ async fn test_panic_handling() {
     // This should not panic at the test level - the panic should be caught by the runner
     // and treated as a test failure, which will then go through the shrink process
     // quickcheck(prop).await;
-    quickcheck_composite!(prop1, prop2, |args, res1, res2| { res1 == res2 });
+    quickcheck_composite!(prop1, prop2, |_args, res1, res2| { res1 == res2 });
 }

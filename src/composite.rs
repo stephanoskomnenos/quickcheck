@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::fmt::Debug;
 
-use crate::{Arbitrary, Gen, TestResult};
+use crate::{Arbitrary, TestResult};
 
 /// A composite property that compares results from multiple Property implementations
 pub struct CompositeProperty<P1, P2, F>
@@ -39,14 +39,13 @@ where
     P2::Args: From<P1::Args>,
     F: Fn(&P1::Args, P1::Return, P2::Return) -> bool + Send + Sync + 'static,
 {
-    async fn result(&self, g: &mut Gen) -> TestResult {
-        // Generate arguments for the first property
-        let args: P1::Args = Arbitrary::arbitrary(g);
-        
-        // Execute both properties
-        let result1 = execute_property(&self.prop1, &args).await;
+    type Args = P1::Args;
+    
+    async fn result(&self, args: &Self::Args) -> TestResult {
+        // Execute both properties with the same arguments
+        let result1 = self.prop1.result(args).await;
         let args2: P2::Args = args.clone().into();
-        let result2 = execute_property(&self.prop2, &args2).await;
+        let result2 = self.prop2.result(&args2).await;
         
         // Check if both executions were successful
         if result1.is_failure() || result2.is_failure() {
@@ -68,7 +67,7 @@ where
         match (return1, return2) {
             (Ok(val1), Ok(val2)) => {
                 // Compare the results using the provided comparison function
-                if (self.comparison)(&args, val1, val2) {
+                if (self.comparison)(args, val1, val2) {
                     TestResult::passed()
                 } else {
                     TestResult {
@@ -89,18 +88,6 @@ where
     }
 }
 
-/// Helper function to execute a property and return its result
-async fn execute_property<P: crate::tester::Property + 'static>(
-    prop: &P,
-    args: &P::Args,
-) -> TestResult {
-    use crate::tester::Testable;
-    
-    // Create a new generator for each execution to ensure consistent behavior
-    let mut g = Gen::new(100);
-    prop.result(&mut g).await
-}
-
 /// Helper function to extract the return value from a TestResult
 fn extract_return_value<P: crate::tester::Property>(result: &TestResult) -> Result<P::Return, String> {
     if let Some(ref json_str) = result.return_value {
@@ -115,6 +102,6 @@ fn extract_return_value<P: crate::tester::Property>(result: &TestResult) -> Resu
 #[macro_export]
 macro_rules! quickcheck_composite {
     ($prop1:expr, $prop2:expr, |$args:ident, $res1:ident, $res2:ident| $comparison:expr) => {
-        $crate::composite::CompositeProperty::new($prop1, $prop2, |$args, $res1, $res2| $comparison)
+        $crate::tester::quickcheck($crate::composite::CompositeProperty::new($prop1, $prop2, |$args, $res1, $res2| $comparison)).await
     };
 }

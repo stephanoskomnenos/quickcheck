@@ -79,7 +79,8 @@ impl QuickCheck {
     {
         let mut n = 0;
         for _ in 0..self.tests {
-            match f.result(&mut self.rng).await {
+            let args = A::Args::arbitrary(&mut self.rng);
+            match f.result(&args).await {
                 TestResult { status: Pass, .. } => n += 1,
                 TestResult { status: Discard, .. } => (),
                 failed_result => return Err(failed_result),
@@ -228,7 +229,10 @@ impl From<bool> for TestResult {
 /// `Testable` is the central trait that `QuickCheck` uses.
 #[async_trait]
 pub trait Testable: 'static + Send + Sync {
-    async fn result(&self, g: &mut Gen) -> TestResult;
+    /// The argument type for this testable
+    type Args: Arbitrary + Debug + Clone + Send + Sync + 'static;
+    
+    async fn result(&self, args: &Self::Args) -> TestResult;
 }
 
 /// A new trait to define a remote property and its argument structure.
@@ -257,8 +261,9 @@ impl<P> Testable for P
 where
     P: Property + 'static,
 {
-    async fn result(&self, g: &mut Gen) -> TestResult {
-        // Define the helper functions inside, so they can capture the generic `P`.
+    type Args = P::Args;
+    
+    async fn result(&self, args: &Self::Args) -> TestResult {
         async fn execute_remote<Pr: Property>(
             prop: &Pr,
             args: &Pr::Args,
@@ -296,23 +301,13 @@ where
         ) -> Option<TestResult> {
             // Collect the iterator into a Vec to hold across await points
             let shrunk_values: Vec<_> = initial_args.shrink().collect();
-
+            
             for shrunk_args in shrunk_values {
-                if let Ok(mut new_result) =
-                    execute_remote(prop, &shrunk_args).await
-                {
+                if let Ok(new_result) = execute_remote(prop, &shrunk_args).await {
                     if new_result.is_failure() {
-                        new_result.arguments =
-                            vec![format!("{:?}", shrunk_args)];
-
                         // Use boxing for recursive async call
-                        let smaller_failure = Box::pin(shrink_failure(
-                            prop,
-                            shrunk_args.clone(),
-                        ))
-                        .await;
-
-                        // Ensure we return a result with arguments
+                        let smaller_failure = Box::pin(shrink_failure(prop, shrunk_args)).await;
+                        
                         if let Some(smaller_result) = smaller_failure {
                             return Some(smaller_result);
                         } else {
@@ -324,13 +319,11 @@ where
             None
         }
 
-        // --- Main test logic ---
-        let args: P::Args = Arbitrary::arbitrary(g);
-        match execute_remote(self, &args).await {
+        match execute_remote(self, args).await {
             Ok(mut result) => {
                 if result.is_failure() {
-                    result.arguments = vec![format!("{:?}", args)];
-                    shrink_failure(self, args).await.unwrap_or(result)
+                    // Start shrink process for failing test
+                    shrink_failure(self, args.clone()).await.unwrap_or(result)
                 } else {
                     result
                 }
