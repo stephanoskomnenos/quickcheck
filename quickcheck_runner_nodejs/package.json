@@ -1,0 +1,27 @@
+{
+  "name": "quickcheck-runner-nodejs",
+  "version": "0.1.0",
+  "description": "Node.js runner for multi-language property-based testing framework",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "build": "tsc",
+    "generate": "bun run generate-proto",
+    "generate-proto": "protoc --plugin=protoc-gen-ts=./node_modules/.bin/protoc-gen-ts --ts_out=src/generated --proto_path=proto proto/pbt_service.proto",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0",
+    "ts-proto": "^1.159.0",
+    "protoc-gen-ts": "^0.8.7"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

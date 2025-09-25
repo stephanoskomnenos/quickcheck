@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package pbt_service;
+
+// 主服务，由各个语言的 Test Stub 实现
+service TestRunner {
+  // 执行一个属性测试
+  // Orchestrator 调用此方法
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+}
+
+// 测试执行的请求
+message ExecuteRequest {
+  // 要测试的属性的唯一标识符，例如 "property_reverse_list"
+  string property_name = 1;
+
+  // 生成的测试输入数据。
+  // 这是最棘手的部分！我们使用 bytes 来存储序列化后的数据。
+  // 序列化格式可以是 JSON、MessagePack 或甚至是原始 Protobuf。
+  // JSON 是最简单和最灵活的起点。
+  string test_data_json = 2;
+}
+
+// 测试执行的响应
+message ExecuteResponse {
+  // 测试结果的枚举
+  enum TestStatus {
+    // 测试通过
+    PASSED = 0;
+    // 测试失败
+    FAILED = 1;
+    // 输入数据无效（例如，属性有前置条件，而生成的数据不满足）
+    INVALID_INPUT = 2;
+  }
+
+  TestStatus status = 1;
+
+  // 如果测试失败，这里包含详细信息，例如断言错误、堆栈跟踪等。
+  optional string failure_detail = 2;
+
+  // 测试函数的返回值，序列化为JSON字符串，用于复合测试比较
+  optional string return_value_json = 3;
+}
