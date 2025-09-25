@@ -21,7 +21,7 @@ semver compatible releases.
 
 // These re-exports remain the same.
 pub use crate::arbitrary::{empty_shrinker, single_shrinker, Arbitrary, Gen};
-pub use crate::tester::{quickcheck, QuickCheck, TestResult, Testable};
+pub use crate::tester::{quickcheck, QuickCheck, TestResult, Testable, Property};
 
 /// A macro for writing quickcheck tests.
 ///

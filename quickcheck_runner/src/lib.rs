@@ -110,9 +110,9 @@ impl<F: TestFunction> TestRunner for SingleTestRunner<F> {
     }
 }
 
-/// Macro to create a test function runner
+/// Convenience macro for creating a binary that runs a test function
 #[macro_export]
-macro_rules! quickcheck_runner {
+macro_rules! quickcheck_runner_main {
     ($test_fn:expr, $args_ty:ty, $return_ty:ty, $property_name:expr) => {
         use quickcheck_runner::{TestFunction, SingleTestRunner};
         
@@ -133,15 +133,5 @@ macro_rules! quickcheck_runner {
             let runner = SingleTestRunner::new(TestFnWrapper);
             runner.run("[::1]:50051").await
         }
-    };
-}
-
-/// Convenience macro for creating a binary that runs a test function
-#[macro_export]
-macro_rules! quickcheck_runner_main {
-    ($test_fn:expr, $args_ty:ty, $return_ty:ty, $property_name:expr) => {
-        use quickcheck_runner::quickcheck_runner;
-        
-        quickcheck_runner!($test_fn, $args_ty, $return_ty, $property_name);
     };
 }
