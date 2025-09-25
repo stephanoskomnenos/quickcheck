@@ -1,39 +1,40 @@
-use quickcheck::quickcheck;
+use serde::{Deserialize, Serialize};
+use quickcheck::{quickcheck, Arbitrary, Gen, Property};
 
-fn sieve(n: usize) -> Vec<usize> {
-    if n <= 1 {
-        return vec![];
-    }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct SieveArgs {
+    n: usize,
+}
 
-    let mut marked = vec![false; n + 1];
-    marked[0] = true;
-    marked[1] = true;
-    marked[2] = true;
-    for p in 2..n {
-        for i in (2 * p..n).filter(|&n| n % p == 0) {
-            marked[i] = true;
+impl Arbitrary for SieveArgs {
+    fn arbitrary(g: &mut Gen) -> Self {
+        SieveArgs {
+            n: usize::arbitrary(g) % 100, // Limit size for performance
         }
     }
-    marked
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &m)| if m { None } else { Some(i) })
-        .collect()
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(self.n.shrink().map(|new_n| SieveArgs { n: new_n }))
+    }
 }
 
-fn is_prime(n: usize) -> bool {
-    n != 0 && n != 1 && (2..).take_while(|i| i * i <= n).all(|i| n % i != 0)
+struct SieveTest {
+    endpoint: String,
 }
 
-fn main() {
-    fn prop_all_prime(n: usize) -> bool {
-        sieve(n).into_iter().all(is_prime)
-    }
+impl Property for SieveTest {
+    type Args = SieveArgs;
+    type Return = bool;
+    const PROPERTY_NAME: &'static str = "property_sieve";
+    fn endpoint(&self) -> &str { &self.endpoint }
+}
 
-    fn prop_prime_iff_in_the_sieve(n: usize) -> bool {
-        sieve(n) == (0..=n).filter(|&i| is_prime(i)).collect::<Vec<_>>()
-    }
-
-    quickcheck(prop_all_prime as fn(usize) -> bool);
-    quickcheck(prop_prime_iff_in_the_sieve as fn(usize) -> bool);
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let prop = SieveTest {
+        endpoint: "http://[::1]:50051".to_string(),
+    };
+    
+    quickcheck(prop).await;
+    Ok(())
 }

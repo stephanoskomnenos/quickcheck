@@ -1,19 +1,40 @@
-use quickcheck::{quickcheck, TestResult};
+use serde::{Deserialize, Serialize};
+use quickcheck::{quickcheck, Arbitrary, Gen, Property};
 
-fn reverse<T: Clone>(xs: &[T]) -> Vec<T> {
-    let mut rev = vec![];
-    for x in xs {
-        rev.insert(0, x.clone());
-    }
-    rev
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct ReverseSingleArgs {
+    xs: Vec<isize>,
 }
 
-fn main() {
-    fn prop(xs: Vec<isize>) -> TestResult {
-        if xs.len() != 1 {
-            return TestResult::discard();
+impl Arbitrary for ReverseSingleArgs {
+    fn arbitrary(g: &mut Gen) -> Self {
+        ReverseSingleArgs {
+            xs: Vec::<isize>::arbitrary(g),
         }
-        TestResult::from_bool(xs == reverse(&xs))
     }
-    quickcheck(prop as fn(Vec<isize>) -> TestResult);
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(self.xs.shrink().map(|new_xs| ReverseSingleArgs { xs: new_xs }))
+    }
+}
+
+struct ReverseSingleTest {
+    endpoint: String,
+}
+
+impl Property for ReverseSingleTest {
+    type Args = ReverseSingleArgs;
+    type Return = bool;
+    const PROPERTY_NAME: &'static str = "property_reverse_single";
+    fn endpoint(&self) -> &str { &self.endpoint }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let prop = ReverseSingleTest {
+        endpoint: "http://[::1]:50051".to_string(),
+    };
+    
+    quickcheck(prop).await;
+    Ok(())
 }

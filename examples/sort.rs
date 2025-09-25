@@ -1,46 +1,40 @@
-// This is a buggy quick sort implementation, QuickCheck will find the bug for
-// you.
+use serde::{Deserialize, Serialize};
+use quickcheck::{quickcheck, Arbitrary, Gen, Property};
 
-use quickcheck::quickcheck;
-
-fn smaller_than<T: Clone + Ord>(xs: &[T], pivot: &T) -> Vec<T> {
-    xs.iter().filter(|&x| *x < *pivot).cloned().collect()
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct SortArgs {
+    xs: Vec<isize>,
 }
 
-fn larger_than<T: Clone + Ord>(xs: &[T], pivot: &T) -> Vec<T> {
-    xs.iter().filter(|&x| *x > *pivot).cloned().collect()
-}
-
-fn sortk<T: Clone + Ord>(x: &T, xs: &[T]) -> Vec<T> {
-    let mut result: Vec<T> = sort(&smaller_than(xs, x));
-    let last_part = sort(&larger_than(xs, x));
-    result.push(x.clone());
-    result.extend(last_part.iter().cloned());
-    result
-}
-
-fn sort<T: Clone + Ord>(list: &[T]) -> Vec<T> {
-    if list.is_empty() {
-        vec![]
-    } else {
-        sortk(&list[0], &list[1..])
-    }
-}
-
-fn main() {
-    fn is_sorted(xs: Vec<isize>) -> bool {
-        for win in xs.windows(2) {
-            if win[0] > win[1] {
-                return false;
-            }
+impl Arbitrary for SortArgs {
+    fn arbitrary(g: &mut Gen) -> Self {
+        SortArgs {
+            xs: Vec::<isize>::arbitrary(g),
         }
-        true
     }
 
-    fn keeps_length(xs: Vec<isize>) -> bool {
-        xs.len() == sort(&xs).len()
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(self.xs.shrink().map(|new_xs| SortArgs { xs: new_xs }))
     }
-    quickcheck(keeps_length as fn(Vec<isize>) -> bool);
+}
 
-    quickcheck(is_sorted as fn(Vec<isize>) -> bool);
+struct SortTest {
+    endpoint: String,
+}
+
+impl Property for SortTest {
+    type Args = SortArgs;
+    type Return = bool;
+    const PROPERTY_NAME: &'static str = "property_sort";
+    fn endpoint(&self) -> &str { &self.endpoint }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let prop = SortTest {
+        endpoint: "http://[::1]:50051".to_string(),
+    };
+    
+    quickcheck(prop).await;
+    Ok(())
 }

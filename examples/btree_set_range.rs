@@ -1,55 +1,54 @@
 use std::collections::BTreeSet;
 use std::ops::Bound::{self, *};
+use serde::{Deserialize, Serialize};
+use quickcheck::{quickcheck, Arbitrary, Gen, Property};
 
-use quickcheck::{quickcheck, TestResult};
-
-/// Covers every `std::ops::Range*` plus variants with exclusive start.
-type RangeAny<T> = (Bound<T>, Bound<T>);
-
-/// Mimic `RangeBounds::contains`, stabilized in Rust 1.35.
-trait RangeBounds<T> {
-    fn contains(&self, _: &T) -> bool;
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct BTreeSetRangeArgs {
+    set: BTreeSet<i32>,
+    range: (Bound<i32>, Bound<i32>),
 }
 
-impl<T: PartialOrd> RangeBounds<T> for RangeAny<T> {
-    fn contains(&self, item: &T) -> bool {
-        (match &self.0 {
-            Included(start) => start <= item,
-            Excluded(start) => start < item,
-            Unbounded => true,
-        }) && (match &self.1 {
-            Included(end) => item <= end,
-            Excluded(end) => item < end,
-            Unbounded => true,
-        })
+impl Arbitrary for BTreeSetRangeArgs {
+    fn arbitrary(g: &mut Gen) -> Self {
+        let set: BTreeSet<i32> = Arbitrary::arbitrary(g);
+        let range = (
+            if bool::arbitrary(g) { Included(i32::arbitrary(g)) } else { Excluded(i32::arbitrary(g)) },
+            if bool::arbitrary(g) { Included(i32::arbitrary(g)) } else { Excluded(i32::arbitrary(g)) },
+        );
+        BTreeSetRangeArgs { set, range }
     }
-}
 
-/// Checks conditions where `BTreeSet::range` panics:
-/// - Panics if range start > end.
-/// - Panics if range start == end and both bounds are Excluded.
-fn panics<T: PartialOrd>(range: RangeAny<T>) -> bool {
-    match (&range.0, &range.1) {
-        (Excluded(start), Excluded(end)) => start >= end,
-        (Included(start), Excluded(end) | Included(end))
-        | (Excluded(start), Included(end)) => start > end,
-        (Unbounded, _) | (_, Unbounded) => false,
-    }
-}
-
-/// Checks that `BTreeSet::range` returns all items contained in the given
-/// `range`.
-fn check_range(set: BTreeSet<i32>, range: RangeAny<i32>) -> TestResult {
-    if panics(range) {
-        TestResult::discard()
-    } else {
-        let xs: BTreeSet<_> = set.range(range).copied().collect();
-        TestResult::from_bool(
-            set.iter().all(|x| range.contains(x) == xs.contains(x)),
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(
+            self.set.shrink().zip(self.range.0.shrink().zip(self.range.1.shrink()))
+                .map(|(new_set, (new_start, new_end))| {
+                    BTreeSetRangeArgs { 
+                        set: new_set, 
+                        range: (new_start, new_end) 
+                    }
+                })
         )
     }
 }
 
-fn main() {
-    quickcheck(check_range as fn(_, _) -> TestResult);
+struct BTreeSetRangeTest {
+    endpoint: String,
+}
+
+impl Property for BTreeSetRangeTest {
+    type Args = BTreeSetRangeArgs;
+    type Return = bool;
+    const PROPERTY_NAME: &'static str = "property_btree_set_range";
+    fn endpoint(&self) -> &str { &self.endpoint }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let prop = BTreeSetRangeTest {
+        endpoint: "http://[::1]:50051".to_string(),
+    };
+    
+    quickcheck(prop).await;
+    Ok(())
 }
