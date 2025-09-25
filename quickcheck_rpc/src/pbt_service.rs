@@ -20,6 +20,9 @@ pub struct ExecuteResponse {
     /// 如果测试失败，这里包含详细信息，例如断言错误、堆栈跟踪等。
     #[prost(string, optional, tag = "2")]
     pub failure_detail: ::core::option::Option<::prost::alloc::string::String>,
+    /// 测试函数的返回值，序列化为JSON字符串，用于复合测试比较
+    #[prost(string, optional, tag = "3")]
+    pub return_value_json: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Nested message and enum types in `ExecuteResponse`.
 pub mod execute_response {

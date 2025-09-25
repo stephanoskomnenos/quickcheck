@@ -110,7 +110,11 @@ macro_rules! info {
 
 // Module declarations remain the same.
 mod arbitrary;
+mod composite;
 mod tester;
 
 #[cfg(test)]
 mod tests;
+
+// Re-export composite functionality
+pub use composite::{CompositeProperty, Property as CompositePropertyTrait};

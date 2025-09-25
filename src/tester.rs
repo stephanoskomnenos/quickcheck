@@ -1,4 +1,3 @@
-use std::cmp;
 use std::env;
 use std::fmt::Debug;
 
@@ -80,10 +79,10 @@ impl QuickCheck {
     {
         let mut n = 0;
         for _ in 0..self.tests {
-            match f.result(&mut self.rng).await.status {
-                Pass => n += 1,
-                Fail => return Err(TestResult { ..Default::default() }),
-                Discard => (),
+            match f.result(&mut self.rng).await {
+                TestResult { status: Pass, .. } => n += 1,
+                TestResult { status: Discard, .. } => (),
+                failed_result => return Err(failed_result),
             }
         }
         Ok(n)
@@ -105,8 +104,9 @@ pub async fn quickcheck<A: Testable + Send + Sync>(a: A) {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct TestResult {
     pub status: Status,
-    pub arguments: Option<Vec<String>>,
+    pub arguments: Vec<String>,
     pub err: Option<String>,
+    pub return_value: Option<String>, // JSON string of the return value for composite tests
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
@@ -150,7 +150,12 @@ impl TestResult {
     /// When a test is discarded, `quickcheck` will replace it with a
     /// fresh one (up to a certain limit).
     pub fn discard() -> TestResult {
-        TestResult { status: Discard, arguments: None, err: None }
+        TestResult {
+            status: Discard,
+            arguments: vec![],
+            err: None,
+            return_value: None,
+        }
     }
 
     /// Converts a `bool` to a `TestResult`. A `true` value indicates that
@@ -159,8 +164,9 @@ impl TestResult {
     pub fn from_bool(b: bool) -> TestResult {
         TestResult {
             status: if b { Pass } else { Fail },
-            arguments: None,
+            arguments: vec![],
             err: None,
+            return_value: None,
         }
     }
 
@@ -192,10 +198,7 @@ impl TestResult {
         self.is_failure() && self.err.is_some()
     }
     fn failed_msg(&self) -> String {
-        let arguments_msg = match self.arguments {
-            None => "No Arguments Provided".to_owned(),
-            Some(ref args) => format!("Arguments: ({})", args.join(", ")),
-        };
+        let arguments_msg = format!("Arguments: ({})", self.arguments.join(", "));
         match self.err {
             None => format!("[quickcheck] TEST FAILED. {arguments_msg}"),
             Some(ref err) => format!(
@@ -233,6 +236,14 @@ pub trait Property: Send + Sync {
     /// The struct that holds the arguments for this property.
     type Args: Arbitrary + Serialize + Debug + Clone + Send + Sync + 'static;
 
+    /// The return type of the property function, which must be deserializable.
+    type Return: for<'de> Deserialize<'de>
+        + Debug
+        + Clone
+        + Send
+        + Sync
+        + 'static;
+
     /// The unique string ID for this property, matching the ID in the runner.
     const PROPERTY_NAME: &'static str;
 
@@ -269,12 +280,13 @@ where
                 .map_err(|e| e.to_string())?
                 .into_inner();
             println!("response: {:#?}", response);
-            let proto_status = ProtoStatus::from_i32(response.status)
+            let proto_status = ProtoStatus::try_from(response.status)
                 .unwrap_or(ProtoStatus::Failed);
             Ok(TestResult {
                 status: proto_status.into(),
-                arguments: None,
+                arguments: vec![format!("{:?}", args)],
                 err: response.failure_detail,
+                return_value: response.return_value_json,
             })
         }
 
@@ -282,20 +294,30 @@ where
             prop: &Pr,
             initial_args: Pr::Args,
         ) -> Option<TestResult> {
-            // *** THE FIX IS HERE ***
-            // We collect the iterator into a Vec. The Vec is `Send`, so it's safe
-            // to hold it across the `.await` point inside the loop.
+            // Collect the iterator into a Vec to hold across await points
             let shrunk_values: Vec<_> = initial_args.shrink().collect();
+
             for shrunk_args in shrunk_values {
                 if let Ok(mut new_result) =
                     execute_remote(prop, &shrunk_args).await
                 {
                     if new_result.is_failure() {
                         new_result.arguments =
-                            Some(vec![format!("{:?}", shrunk_args)]);
-                        let smaller_failure =
-                            Box::pin(shrink_failure(prop, shrunk_args)).await;
-                        return Some(smaller_failure.unwrap_or(new_result));
+                            vec![format!("{:?}", shrunk_args)];
+
+                        // Use boxing for recursive async call
+                        let smaller_failure = Box::pin(shrink_failure(
+                            prop,
+                            shrunk_args.clone(),
+                        ))
+                        .await;
+
+                        // Ensure we return a result with arguments
+                        if let Some(smaller_result) = smaller_failure {
+                            return Some(smaller_result);
+                        } else {
+                            return Some(new_result);
+                        }
                     }
                 }
             }
@@ -307,7 +329,7 @@ where
         match execute_remote(self, &args).await {
             Ok(mut result) => {
                 if result.is_failure() {
-                    result.arguments = Some(vec![format!("{:?}", args)]);
+                    result.arguments = vec![format!("{:?}", args)];
                     shrink_failure(self, args).await.unwrap_or(result)
                 } else {
                     result
@@ -315,8 +337,9 @@ where
             }
             Err(e) => TestResult {
                 status: Fail,
-                arguments: Some(vec![format!("{:?}", args)]),
+                arguments: vec![format!("{:?}", args)],
                 err: Some(format!("Tester failed to call runner: {}", e)),
+                return_value: None,
             },
         }
     }

@@ -265,9 +265,7 @@
 //         true
 //     }
 // }
-use crate::{quickcheck, Arbitrary, Gen, tester::Property, Testable};
-// use quickcheck_macros::Arbitrary;
-// Import the new Property trait
+use crate::{quickcheck, Arbitrary, Gen, tester::Property};
 use serde::{Serialize, Deserialize};
 
 const ENDPOINT: &str = "http://[::1]:50051";
@@ -306,6 +304,7 @@ struct ReverseTest {
 impl Property for ReverseTest {
     // Link to the argument struct.
     type Args = ReverseArgs;
+    type Return = Vec<usize>;
     
     // Set the unique name for the runner to identify this property.
     const PROPERTY_NAME: &'static str = "property_reverse_list";
@@ -356,6 +355,7 @@ struct AddTest {
 
 impl Property for AddTest {
     type Args = AddArgs;
+    type Return = i32;
     const PROPERTY_NAME: &'static str = "property_add";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
@@ -364,5 +364,26 @@ impl Property for AddTest {
 #[ignore]
 async fn test_the_add_property() {
     let prop = AddTest { endpoint: ENDPOINT.to_string() };
+    quickcheck(prop).await;
+}
+
+// --- Test panic handling ---
+struct PanicTest {
+    endpoint: String,
+}
+
+impl Property for PanicTest {
+    type Args = AddArgs;  // Reuse AddArgs for simplicity
+    type Return = i32;
+    const PROPERTY_NAME: &'static str = "property_panic";
+    fn endpoint(&self) -> &str { &self.endpoint }
+}
+
+#[tokio::test]
+#[ignore] // Run this test manually when the gRPC runner is active.
+async fn test_panic_handling() {
+    let prop = PanicTest { endpoint: ENDPOINT.to_string() };
+    // This should not panic at the test level - the panic should be caught by the runner
+    // and treated as a test failure, which will then go through the shrink process
     quickcheck(prop).await;
 }
