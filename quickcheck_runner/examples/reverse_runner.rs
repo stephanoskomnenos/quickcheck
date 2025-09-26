@@ -3,26 +3,26 @@ use quickcheck_runner::quickcheck_runner_main;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct ReverseArgs {
-    xs: Vec<isize>,
+    xs: Vec<String>,
 }
 
-fn reverse_test(args: ReverseArgs) -> Result<bool, String> {
+fn reverse_test(args: ReverseArgs) -> Result<Vec<String>, String> {
     let mut rev = vec![];
     for x in &args.xs {
-        rev.insert(0, *x);
+        rev.insert(0, x);
     }
     let revrev = {
         let mut revrev = vec![];
-        for x in &rev {
-            revrev.insert(0, *x);
+        for x in rev {
+            revrev.insert(0, x.to_owned());
         }
         // 故意设置的错误
-        if revrev.len() % 3 == 1 {
-            revrev[0] = 1;
+        if revrev.len() % 2 == 1 {
+            revrev[0] = "Here is an error".to_owned();
         }
         revrev
     };
-    Ok(revrev == args.xs)
+    Ok(revrev)
 }
 
-quickcheck_runner_main!(reverse_test, ReverseArgs, bool, "property_reverse");
+quickcheck_runner_main!(reverse_test, ReverseArgs, Vec<String>, "property_reverse");

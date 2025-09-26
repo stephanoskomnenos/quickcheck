@@ -103,15 +103,15 @@ const addTest: TestFunction = {
 // 示例测试函数：反转测试
 const reverseTest: TestFunction = {
   propertyName: 'property_reverse',
-  execute(args: { xs: number[] }) {
-    return args.xs.slice().reverse();
+  execute(args: { xs: string[] }) {
+    return args.xs.slice().reverse().reverse();
   }
 };
 
 // 主函数 - 启动示例服务器
 if (import.meta.main) {
   // 默认启动加法测试服务器
-  startServer(addTest)
+  startServer(reverseTest)
     .then(server => {
       console.log('Server is running. Press Ctrl+C to stop.');
       

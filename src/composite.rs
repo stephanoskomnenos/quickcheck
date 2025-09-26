@@ -36,50 +36,91 @@ where
     type Args = P::Args;
     
     async fn result(&self, args: &Self::Args) -> TestResult {
-        // Execute all properties with the same arguments
-        let mut results = Vec::new();
-        for prop in &self.props {
-            let result = prop.result(args).await;
-            if result.is_failure() {
-                return TestResult {
-                    status: crate::tester::Status::Fail,
-                    arguments: vec![format!("{:?}", args)],
-                    err: Some(format!(
-                        "Property execution failed: {}",
-                        result.err.unwrap_or_else(|| "Unknown error".to_string())
-                    )),
-                    return_value: None,
-                };
-            }
-            results.push(result);
-        }
-        
-        // Extract return values from all results
-        let mut return_values = Vec::new();
-        for result in &results {
-            match extract_return_value::<P>(result) {
-                Ok(value) => return_values.push(value),
-                Err(e) => {
-                    return TestResult {
+        async fn execute_properties<P: crate::tester::Property + 'static>(
+            props: &[P],
+            args: &P::Args,
+        ) -> Result<Vec<P::Return>, TestResult> {
+            let mut results = Vec::new();
+            for prop in props {
+                let result = prop.result(args).await;
+                if result.is_failure() {
+                    return Err(TestResult {
                         status: crate::tester::Status::Fail,
                         arguments: vec![format!("{:?}", args)],
-                        err: Some(format!("Failed to extract return values: {}", e)),
+                        err: Some(format!(
+                            "Property execution failed: {}",
+                            result.err.unwrap_or_else(|| "Unknown error".to_string())
+                        )),
                         return_value: None,
-                    };
+                    });
+                }
+                results.push(result);
+            }
+            
+            let mut return_values = Vec::new();
+            for result in &results {
+                match extract_return_value::<P>(result) {
+                    Ok(value) => return_values.push(value),
+                    Err(e) => {
+                        return Err(TestResult {
+                            status: crate::tester::Status::Fail,
+                            arguments: vec![format!("{:?}", args)],
+                            err: Some(format!("Failed to extract return values: {}", e)),
+                            return_value: None,
+                        });
+                    }
                 }
             }
+            Ok(return_values)
         }
-        
-        // Compare the results using the provided comparison function
-        if (self.comparison)(args, &return_values) {
-            TestResult::passed()
-        } else {
-            TestResult {
-                status: crate::tester::Status::Fail,
-                arguments: vec![format!("{:?}", args)],
-                err: Some("Comparison function returned false".to_string()),
-                return_value: None,
+
+        async fn shrink_failure<P, F>(
+            composite: &CompositeProperty<P, F>,
+            initial_args: P::Args,
+        ) -> Option<TestResult>
+        where
+            P: crate::tester::Property + Send + Sync + 'static,
+            P::Args: Arbitrary + Debug + Clone + Send + Sync,
+            F: Fn(&P::Args, &[P::Return]) -> bool + Send + Sync + 'static,
+        {
+            println!("Shrinking composite test... Args: {:?}", initial_args);
+            let shrunk_values: Vec<_> = initial_args.shrink().collect();
+            
+            for shrunk_args in shrunk_values {
+                if let Ok(return_values) = execute_properties(&composite.props, &shrunk_args).await {
+                    if !(composite.comparison)(&shrunk_args, &return_values) {
+                        let smaller_failure = Box::pin(shrink_failure(composite, shrunk_args.clone())).await;
+                        if let Some(smaller_result) = smaller_failure {
+                            return Some(smaller_result);
+                        } else {
+                            return Some(TestResult {
+                                status: crate::tester::Status::Fail,
+                                arguments: vec![format!("{:?}", shrunk_args)],
+                                err: Some("Comparison function returned false".to_string()),
+                                return_value: None,
+                            });
+                        }
+                    }
+                }
             }
+            None
+        }
+
+        match execute_properties(&self.props, args).await {
+            Ok(return_values) => {
+                if (self.comparison)(args, &return_values) {
+                    TestResult::passed()
+                } else {
+                    // Start shrink process for failing composite test
+                    shrink_failure(self, args.clone()).await.unwrap_or_else(|| TestResult {
+                        status: crate::tester::Status::Fail,
+                        arguments: vec![format!("{:?}", args)],
+                        err: Some("Comparison function returned false".to_string()),
+                        return_value: None,
+                    })
+                }
+            }
+            Err(result) => result,
         }
     }
 }

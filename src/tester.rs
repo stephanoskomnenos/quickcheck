@@ -77,23 +77,39 @@ impl QuickCheck {
     where
         A: Testable,
     {
-        let mut n = 0;
-        for _ in 0..self.tests {
+        let mut n_tests_passed = 0;
+        for _ in 0..self.max_tests {
+            if n_tests_passed >= self.tests {
+                break;
+            }
             let args = A::Args::arbitrary(&mut self.rng);
             match f.result(&args).await {
-                TestResult { status: Pass, .. } => n += 1,
+                TestResult { status: Pass, .. } => n_tests_passed += 1,
                 TestResult { status: Discard, .. } => (),
-                failed_result => return Err(failed_result),
+                r @ TestResult { status: Fail, .. } => return Err(r),
             }
         }
-        Ok(n)
+        Ok(n_tests_passed)
     }
     pub async fn quickcheck<A>(&mut self, f: A)
     where
         A: Testable,
     {
-        if let Err(r) = self.quicktest(f).await {
-            panic!("{}", r.failed_msg());
+        // Ignore log init failures, implying it has already been done.
+        let _ = crate::env_logger_init();
+
+        let n_tests_passed = match self.quicktest(f).await {
+            Ok(n_tests_passed) => n_tests_passed,
+            Err(result) => panic!("{}", result.failed_msg()),
+        };
+
+        if n_tests_passed >= self.min_tests_passed {
+            info!("(Passed {} QuickCheck tests.)", n_tests_passed);
+        } else {
+            panic!(
+                "(Unable to generate enough tests, {} not discarded.)",
+                n_tests_passed
+            );
         }
     }
 }
@@ -274,7 +290,7 @@ where
                     .map_err(|e| e.to_string())?;
             let args_json =
                 serde_json::to_string(args).map_err(|e| e.to_string())?;
-            println!("args_json: {:#?}", args_json);
+            // println!("args_json: {:#?}", args_json);
             let request = tonic::Request::new(ExecuteRequest {
                 property_name: Pr::PROPERTY_NAME.to_string(),
                 test_data_json: args_json,
@@ -284,7 +300,7 @@ where
                 .await
                 .map_err(|e| e.to_string())?
                 .into_inner();
-            println!("response: {:#?}", response);
+            // println!("response: {:#?}", response);
             let proto_status = ProtoStatus::try_from(response.status)
                 .unwrap_or(ProtoStatus::Failed);
             Ok(TestResult {
@@ -299,6 +315,7 @@ where
             prop: &Pr,
             initial_args: Pr::Args,
         ) -> Option<TestResult> {
+            println!("Shrinking... Args: {:?}", initial_args);
             // Collect the iterator into a Vec to hold across await points
             let shrunk_values: Vec<_> = initial_args.shrink().collect();
             
@@ -320,7 +337,7 @@ where
         }
 
         match execute_remote(self, args).await {
-            Ok(mut result) => {
+            Ok(result) => {
                 if result.is_failure() {
                     // Start shrink process for failing test
                     shrink_failure(self, args.clone()).await.unwrap_or(result)
