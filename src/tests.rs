@@ -330,15 +330,15 @@ async fn test_the_reverse_property() {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct AddArgs {
-    a: i32,
-    b: i32,
+    a: i64,
+    b: i64,
 }
 
 impl Arbitrary for AddArgs {
     fn arbitrary(g: &mut Gen) -> Self {
         Self {
-            a: i32::arbitrary(g),
-            b: i32::arbitrary(g),
+            a: i64::arbitrary(g),
+            b: i64::arbitrary(g),
         }
     }
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -355,7 +355,7 @@ struct AddTest {
 
 impl Property for AddTest {
     type Args = AddArgs;
-    type Return = i32;
+    type Return = i64;
     const PROPERTY_NAME: &'static str = "property_add";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
@@ -366,7 +366,13 @@ async fn test_the_add_property() {
     let prop1 = AddTest { endpoint: ENDPOINT.to_string() };
     let prop2 = AddTest { endpoint: ENDPOINT.to_string() };
     // quickcheck(prop1).await;
-    quickcheck_composite!(prop1, prop2, |args, res1, res2| { res1 == res2 && res1 == args.a + args.b });
+    quickcheck_composite!(prop1, prop2, |args, results| { 
+        let equal = results[0] == results[1] && results[0] == args.a + args.b;
+        if !equal {
+            println!("Results: {:?}", results);
+        }
+        equal
+    });
 }
 
 // --- Test panic handling ---
@@ -389,5 +395,5 @@ async fn test_panic_handling() {
     // This should not panic at the test level - the panic should be caught by the runner
     // and treated as a test failure, which will then go through the shrink process
     // quickcheck(prop).await;
-    quickcheck_composite!(prop1, prop2, |_args, res1, res2| { res1 == res2 });
+    quickcheck_composite!(prop1, prop2, |_args, _results| { false });
 }

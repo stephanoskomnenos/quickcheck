@@ -86,7 +86,6 @@ export function startServer(testFunction: TestFunction, address: string = '[::1]
         return;
       }
       
-      server.start();
       console.log(`Node.js Quickcheck Runner for '${testFunction.propertyName}' started on ${address}`);
       resolve(server);
     });

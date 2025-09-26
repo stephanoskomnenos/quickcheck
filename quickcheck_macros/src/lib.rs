@@ -130,8 +130,8 @@ pub fn arbitrary_derive(input: TokenStream) -> TokenStream {
 fn gen_arbitrary_body(data: &Data) -> proc_macro2::TokenStream {
     match *data {
         Data::Struct(ref data) => {
-            match data.fields {
-                Fields::Named(ref fields) => {
+            match &data.fields {
+                Fields::Named(fields) => {
                     // For `struct Foo { a: u32, b: bool }`
                     // generates: `a: u32::arbitrary(g), b: bool::arbitrary(g)`
                     let recurse = fields.named.iter().map(|f| {
@@ -147,10 +147,29 @@ fn gen_arbitrary_body(data: &Data) -> proc_macro2::TokenStream {
                         }
                     }
                 }
-                _ => unimplemented!("Derive Arbitrary only supports structs with named fields."),
+                Fields::Unnamed(fields) => {
+                    // For `struct Foo(u32, bool)`
+                    // generates: `Self(u32::arbitrary(g), bool::arbitrary(g))`
+                    let recurse = fields.unnamed.iter().enumerate().map(|(_i, f)| {
+                        let ty = &f.ty;
+                        quote! {
+                            <#ty as ::quickcheck::Arbitrary>::arbitrary(g)
+                        }
+                    });
+                    quote! {
+                        Self(#(#recurse),*)
+                    }
+                }
+                Fields::Unit => {
+                    // For `struct Foo;`
+                    quote! {
+                        Self
+                    }
+                }
             }
         }
-        _ => unimplemented!("Derive Arbitrary can only be used on structs."),
+        Data::Enum(_) => unimplemented!("Derive Arbitrary can only be used on structs, not enums."),
+        Data::Union(_) => unimplemented!("Derive Arbitrary can only be used on structs, not unions."),
     }
 }
 
@@ -158,8 +177,8 @@ fn gen_arbitrary_body(data: &Data) -> proc_macro2::TokenStream {
 fn gen_shrink_body(data: &Data) -> proc_macro2::TokenStream {
     match *data {
         Data::Struct(ref data) => {
-            match data.fields {
-                Fields::Named(ref fields) => {
+            match &data.fields {
+                Fields::Named(fields) => {
                     let field_shrinks = fields.named.iter().map(|f| {
                         let field_name = f.ident.as_ref().unwrap();
                         
@@ -205,9 +224,59 @@ fn gen_shrink_body(data: &Data) -> proc_macro2::TokenStream {
                         )
                     }
                 }
-                _ => unimplemented!("Derive Arbitrary only supports structs with named fields."),
+                Fields::Unnamed(fields) => {
+                    let field_shrinks = fields.unnamed.iter().enumerate().map(|(i, _f)| {
+                        let index = syn::Index::from(i);
+                        
+                        // For each field, create a clone of all *other* fields.
+                        let other_fields_clone = fields.unnamed.iter().enumerate().filter_map(|(j, _f2)| {
+                            if j == i {
+                                None
+                            } else {
+                                let index2 = syn::Index::from(j);
+                                Some(quote! { let #index2 = self.#index2.clone(); })
+                            }
+                        });
+
+                        // Create the struct instance with the new shrunk field value.
+                        let struct_construction = fields.unnamed.iter().enumerate().map(|(j, _f2)| {
+                            let index2 = syn::Index::from(j);
+                            if j == i {
+                                quote! { new_value }
+                            } else {
+                                quote! { #index2.clone() }
+                            }
+                        });
+
+                        // The final map expression for this one field.
+                        quote! {
+                            self.#index.shrink().map({
+                                #(#other_fields_clone)*
+                                move |new_value| {
+                                    Self(#(#struct_construction),*)
+                                }
+                            })
+                        }
+                    });
+
+                    // Chain all the individual field shrinkers together.
+                    quote! {
+                        Box::new(
+                            // Start with an empty iterator and chain onto it.
+                            ::std::iter::empty()
+                                #( .chain(#field_shrinks) )*
+                        )
+                    }
+                }
+                Fields::Unit => {
+                    // Unit structs have no fields to shrink, so return an empty iterator.
+                    quote! {
+                        Box::new(::std::iter::empty())
+                    }
+                }
             }
         }
-        _ => unimplemented!("Derive Arbitrary can only be used on structs."),
+        Data::Enum(_) => unimplemented!("Derive Arbitrary can only be used on structs, not enums."),
+        Data::Union(_) => unimplemented!("Derive Arbitrary can only be used on structs, not unions."),
     }
 }
