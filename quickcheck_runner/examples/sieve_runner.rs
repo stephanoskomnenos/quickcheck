@@ -37,4 +37,4 @@ fn sieve_test(args: SieveArgs) -> Result<bool, String> {
     Ok(primes.into_iter().all(is_prime))
 }
 
-quickcheck_runner_main!(sieve_test, SieveArgs, bool, "property_sieve");
+quickcheck_runner_main!(sieve_test, SieveArgs, bool, "sieve_test");

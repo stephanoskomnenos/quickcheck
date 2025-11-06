@@ -47,4 +47,4 @@ fn btree_set_range_test(args: BTreeSetRangeArgs) -> Result<bool, String> {
     Ok(args.set.iter().all(|x| args.range.contains(x) == xs.contains(x)))
 }
 
-quickcheck_runner_main!(btree_set_range_test, BTreeSetRangeArgs, bool, "property_btree_set_range");
+quickcheck_runner_main!(btree_set_range_test, BTreeSetRangeArgs, bool, "btree_set_range_test");

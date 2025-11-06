@@ -21,4 +21,4 @@ fn out_of_bounds_test(args: OutOfBoundsArgs) -> Result<bool, String> {
     }
 }
 
-quickcheck_runner_main!(out_of_bounds_test, OutOfBoundsArgs, bool, "property_out_of_bounds");
+quickcheck_runner_main!(out_of_bounds_test, OutOfBoundsArgs, bool, "out_of_bounds_test");

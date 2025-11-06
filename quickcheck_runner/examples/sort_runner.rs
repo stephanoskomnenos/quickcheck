@@ -50,4 +50,4 @@ fn sort_test(args: SortArgs) -> Result<bool, String> {
     Ok(true)
 }
 
-quickcheck_runner_main!(sort_test, SortArgs, bool, "property_sort");
+quickcheck_runner_main!(sort_test, SortArgs, bool, "sort_test");

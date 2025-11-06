@@ -21,7 +21,7 @@ semver compatible releases.
 
 // These re-exports remain the same.
 pub use crate::arbitrary::{empty_shrinker, single_shrinker, Arbitrary, Gen};
-pub use crate::tester::{quickcheck, QuickCheck, TestResult, Testable, Property};
+pub use crate::tester::{quickcheck, QuickCheck, TestResult, Testable, RemoteTest};
 
 /// A macro for writing quickcheck tests.
 ///
@@ -117,4 +117,4 @@ mod tester;
 mod tests;
 
 // Re-export composite functionality
-pub use composite::{CompositeProperty};
+pub use composite::{CompositeTest};

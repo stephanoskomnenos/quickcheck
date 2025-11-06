@@ -28,7 +28,7 @@ enum TestStatus {
 
 // 测试函数接口
 interface TestFunction {
-  propertyName: string;
+  testId: string;
   execute(args: any): any;
 }
 
@@ -41,10 +41,10 @@ function createTestServer(testFunction: TestFunction) {
       const request = call.request;
       
       // 验证属性名称
-      if (request.property_name !== testFunction.propertyName) {
+      if (request.test_id !== testFunction.testId) {
         callback({
           code: grpc.status.NOT_FOUND,
-          message: `Property '${request.property_name}' not found. This runner only supports '${testFunction.propertyName}'`
+          message: `Property '${request.test_id}' not found. This runner only supports '${testFunction.testId}'`
         });
         return;
       }
@@ -87,7 +87,7 @@ export function startServer(testFunction: TestFunction, address: string = '[::1]
         return;
       }
       
-      console.log(`Node.js Quickcheck Runner for '${testFunction.propertyName}' started on ${address}`);
+      console.log(`Node.js Quickcheck Runner for '${testFunction.testId}' started on ${address}`);
       resolve(server);
     });
   });
@@ -95,7 +95,7 @@ export function startServer(testFunction: TestFunction, address: string = '[::1]
 
 // 示例测试函数：加法测试
 const addTest: TestFunction = {
-  propertyName: 'property_add',
+  testId: 'add_test',
   execute(args: { a: number; b: number }) {
     return args.a + args.b;
   }
@@ -103,7 +103,7 @@ const addTest: TestFunction = {
 
 // 示例测试函数：反转测试
 const reverseTest: TestFunction = {
-  propertyName: 'property_reverse',
+  testId: 'reverse_test',
   execute(args: { xs: string[] }) {
     const result = args.xs.slice().reverse().reverse();
 

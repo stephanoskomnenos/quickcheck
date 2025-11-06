@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use quickcheck::{quickcheck, Arbitrary, Gen, Property};
+use quickcheck::{quickcheck, Arbitrary, Gen, RemoteTest};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct SortArgs {
@@ -22,19 +22,19 @@ struct SortTest {
     endpoint: String,
 }
 
-impl Property for SortTest {
+impl RemoteTest for SortTest {
     type Args = SortArgs;
     type Return = bool;
-    const PROPERTY_NAME: &'static str = "property_sort";
+    const TEST_ID: &'static str = "sort_test";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let prop = SortTest {
+    let test = SortTest {
         endpoint: "http://[::1]:50051".to_string(),
     };
     
-    quickcheck(prop).await;
+    quickcheck(test).await;
     Ok(())
 }

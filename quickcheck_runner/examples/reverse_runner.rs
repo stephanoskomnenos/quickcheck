@@ -25,4 +25,4 @@ fn reverse_test(args: ReverseArgs) -> Result<Vec<String>, String> {
     Ok(revrev)
 }
 
-quickcheck_runner_main!(reverse_test, ReverseArgs, Vec<String>, "property_reverse");
+quickcheck_runner_main!(reverse_test, ReverseArgs, Vec<String>, "reverse_test");

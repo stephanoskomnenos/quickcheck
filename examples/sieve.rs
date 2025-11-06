@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use quickcheck::{quickcheck, Arbitrary, Gen, Property};
+use quickcheck::{quickcheck, Arbitrary, Gen, RemoteTest};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct SieveArgs {
@@ -22,19 +22,19 @@ struct SieveTest {
     endpoint: String,
 }
 
-impl Property for SieveTest {
+impl RemoteTest for SieveTest {
     type Args = SieveArgs;
     type Return = bool;
-    const PROPERTY_NAME: &'static str = "property_sieve";
+    const TEST_ID: &'static str = "sieve_test";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let prop = SieveTest {
+    let test = SieveTest {
         endpoint: "http://[::1]:50051".to_string(),
     };
     
-    quickcheck(prop).await;
+    quickcheck(test).await;
     Ok(())
 }

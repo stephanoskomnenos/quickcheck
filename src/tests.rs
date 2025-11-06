@@ -265,12 +265,12 @@
 //         true
 //     }
 // }
-use crate::{quickcheck, quickcheck_composite, tester::Property, Arbitrary, Gen};
+use crate::{quickcheck, quickcheck_composite, tester::RemoteTest, Arbitrary, Gen};
 use serde::{Serialize, Deserialize};
 
 const ENDPOINT: &str = "http://[::1]:50051";
 
-// 1. Define a struct for your property's arguments.
+// 1. Define a struct for your test's arguments.
 //    It must derive Arbitrary, Serialize, and other traits.
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -300,14 +300,14 @@ struct ReverseTest {
     endpoint: String,
 }
 
-// 3. Implement the `Property` trait to link everything together.
-impl Property for ReverseTest {
+// 3. Implement the `RemoteTest` trait to link everything together.
+impl RemoteTest for ReverseTest {
     // Link to the argument struct.
     type Args = ReverseArgs;
     type Return = Vec<usize>;
     
-    // Set the unique name for the runner to identify this property.
-    const PROPERTY_NAME: &'static str = "property_reverse_list";
+    // Set the unique name for the runner to identify this test.
+    const TEST_ID: &'static str = "reverse_list_test";
 
     fn endpoint(&self) -> &str {
         &self.endpoint
@@ -317,13 +317,13 @@ impl Property for ReverseTest {
 // Now you can run the test!
 #[tokio::test]
 #[ignore] // Run this test manually when the gRPC runner is active.
-async fn test_the_reverse_property() {
-    let prop = ReverseTest {
+async fn test_the_reverse_test() {
+    let test = ReverseTest {
         endpoint: ENDPOINT.to_string(),
     };
 
-    // `quickcheck` can accept `prop` directly because it implements `Testable` via `Property`.
-    quickcheck(prop).await;
+    // `quickcheck` can accept `test` directly because it implements `Testable` via `RemoteTest`.
+    quickcheck(test).await;
 }
 
 // --- Example with multiple arguments ---
@@ -353,20 +353,20 @@ struct AddTest {
     endpoint: String,
 }
 
-impl Property for AddTest {
+impl RemoteTest for AddTest {
     type Args = AddArgs;
     type Return = i64;
-    const PROPERTY_NAME: &'static str = "property_add";
+    const TEST_ID: &'static str = "add_test";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_the_add_property() {
-    let prop1 = AddTest { endpoint: ENDPOINT.to_string() };
-    let prop2 = AddTest { endpoint: ENDPOINT.to_string() };
-    // quickcheck(prop1).await;
-    quickcheck_composite!(prop1, prop2, |args, results| { 
+async fn test_the_add_test() {
+    let test1 = AddTest { endpoint: ENDPOINT.to_string() };
+    let test2 = AddTest { endpoint: ENDPOINT.to_string() };
+    // quickcheck(test1).await;
+    quickcheck_composite!(test1, test2, |args, results| { 
         let equal = results[0] == results[1] && results[0] == args.a + args.b;
         if !equal {
             println!("Results: {:?}", results);
@@ -380,20 +380,20 @@ struct PanicTest {
     endpoint: String,
 }
 
-impl Property for PanicTest {
+impl RemoteTest for PanicTest {
     type Args = AddArgs;  // Reuse AddArgs for simplicity
     type Return = i32;
-    const PROPERTY_NAME: &'static str = "property_panic";
+    const TEST_ID: &'static str = "panic_test";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
 
 #[tokio::test]
 #[ignore] // Run this test manually when the gRPC runner is active.
 async fn test_panic_handling() {
-    let prop1 = PanicTest { endpoint: ENDPOINT.to_string() };
-    let prop2 = PanicTest { endpoint: ENDPOINT.to_string() };
+    let test1 = PanicTest { endpoint: ENDPOINT.to_string() };
+    let test2 = PanicTest { endpoint: ENDPOINT.to_string() };
     // This should not panic at the test level - the panic should be caught by the runner
     // and treated as a test failure, which will then go through the shrink process
-    // quickcheck(prop).await;
-    quickcheck_composite!(prop1, prop2, |_args, _results| { false });
+    // quickcheck(test).await;
+    quickcheck_composite!(test1, test2, |_args, _results| { false });
 }

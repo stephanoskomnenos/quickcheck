@@ -9,24 +9,24 @@ export namespace pbt_service {
     export class ExecuteRequest extends pb_1.Message {
         #one_of_decls: number[][] = [];
         constructor(data?: any[] | {
-            property_name?: string;
+            test_id?: string;
             test_data?: Uint8Array;
         }) {
             super();
             pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
             if (!Array.isArray(data) && typeof data == "object") {
-                if ("property_name" in data && data.property_name != undefined) {
-                    this.property_name = data.property_name;
+                if ("test_id" in data && data.test_id != undefined) {
+                    this.test_id = data.test_id;
                 }
                 if ("test_data" in data && data.test_data != undefined) {
                     this.test_data = data.test_data;
                 }
             }
         }
-        get property_name() {
+        get test_id() {
             return pb_1.Message.getFieldWithDefault(this, 1, "") as string;
         }
-        set property_name(value: string) {
+        set test_id(value: string) {
             pb_1.Message.setField(this, 1, value);
         }
         get test_data() {
@@ -36,12 +36,12 @@ export namespace pbt_service {
             pb_1.Message.setField(this, 2, value);
         }
         static fromObject(data: {
-            property_name?: string;
+            test_id?: string;
             test_data?: Uint8Array;
         }): ExecuteRequest {
             const message = new ExecuteRequest({});
-            if (data.property_name != null) {
-                message.property_name = data.property_name;
+            if (data.test_id != null) {
+                message.test_id = data.test_id;
             }
             if (data.test_data != null) {
                 message.test_data = data.test_data;
@@ -50,11 +50,11 @@ export namespace pbt_service {
         }
         toObject() {
             const data: {
-                property_name?: string;
+                test_id?: string;
                 test_data?: Uint8Array;
             } = {};
-            if (this.property_name != null) {
-                data.property_name = this.property_name;
+            if (this.test_id != null) {
+                data.test_id = this.test_id;
             }
             if (this.test_data != null) {
                 data.test_data = this.test_data;
@@ -65,8 +65,8 @@ export namespace pbt_service {
         serialize(w: pb_1.BinaryWriter): void;
         serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
             const writer = w || new pb_1.BinaryWriter();
-            if (this.property_name.length)
-                writer.writeString(1, this.property_name);
+            if (this.test_id.length)
+                writer.writeString(1, this.test_id);
             if (this.test_data.length)
                 writer.writeBytes(2, this.test_data);
             if (!w)
@@ -79,7 +79,7 @@ export namespace pbt_service {
                     break;
                 switch (reader.getFieldNumber()) {
                     case 1:
-                        message.property_name = reader.readString();
+                        message.test_id = reader.readString();
                         break;
                     case 2:
                         message.test_data = reader.readBytes();

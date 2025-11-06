@@ -266,7 +266,7 @@ impl From<bool> for TestResult {
     }
 }
 
-// --- The New `Property` Trait and its `Testable` Implementation ---
+// --- The New `RemoteTest` Trait and its `Testable` Implementation ---
 
 /// `Testable` is the central trait that `QuickCheck` uses.
 #[async_trait]
@@ -277,12 +277,12 @@ pub trait Testable: 'static + Send + Sync {
     async fn result(&self, args: &Self::Args) -> TestResult;
 }
 
-/// A new trait to define a remote property and its argument structure.
-pub trait Property: Send + Sync {
-    /// The struct that holds the arguments for this property.
+/// A new trait to define a remote test and its argument structure.
+pub trait RemoteTest: Send + Sync {
+    /// The struct that holds the arguments for this test.
     type Args: Arbitrary + Serialize + Debug + Clone + Send + Sync + 'static;
 
-    /// The return type of the property function, which must be deserializable.
+    /// The return type of the test function, which must be deserializable.
     type Return: for<'de> Deserialize<'de>
         + Debug
         + Clone
@@ -290,35 +290,35 @@ pub trait Property: Send + Sync {
         + Sync
         + 'static;
 
-    /// The unique string ID for this property, matching the ID in the runner.
-    const PROPERTY_NAME: &'static str;
+    /// The unique string ID for this test, matching the ID in the runner.
+    const TEST_ID: &'static str;
 
     /// The network address of the gRPC runner server.
     fn endpoint(&self) -> &str;
 }
 
-/// Implements `Testable` for any type that implements our new `Property` trait.
+/// Implements `Testable` for any type that implements our new `RemoteTest` trait.
 #[async_trait]
-impl<P> Testable for P
+impl<T> Testable for T
 where
-    P: Property + 'static,
+    T: RemoteTest + 'static,
 {
-    type Args = P::Args;
+    type Args = T::Args;
     
     async fn result(&self, args: &Self::Args) -> TestResult {
-        async fn execute_remote<Pr: Property>(
-            prop: &Pr,
-            args: &Pr::Args,
+        async fn execute_remote<Rt: RemoteTest>(
+            test: &Rt,
+            args: &Rt::Args,
         ) -> Result<TestResult, String> {
             let mut client =
-                TestRunnerClient::connect(prop.endpoint().to_string())
+                TestRunnerClient::connect(test.endpoint().to_string())
                     .await
                     .map_err(|e| e.to_string())?;
             let args_msgpack =
                 rmp_serde::to_vec_named(args).map_err(|e| e.to_string())?;
             // println!("args_json: {:#?}", args_json);
             let request = tonic::Request::new(ExecuteRequest {
-                property_name: Pr::PROPERTY_NAME.to_string(),
+                test_id: Rt::TEST_ID.to_string(),
                 test_data: args_msgpack,
             });
             let response = client
@@ -339,19 +339,19 @@ where
             })
         }
 
-        async fn shrink_failure<Pr: Property>(
-            prop: &Pr,
-            initial_args: Pr::Args,
+        async fn shrink_failure<Rt: RemoteTest>(
+            test: &Rt,
+            initial_args: Rt::Args,
         ) -> Option<TestResult> {
             println!("Shrinking... Args: {:?}", initial_args);
             // Collect the iterator into a Vec to hold across await points
             let shrunk_values: Vec<_> = initial_args.shrink().collect();
             
             for shrunk_args in shrunk_values {
-                match execute_remote(prop, &shrunk_args).await {
+                match execute_remote(test, &shrunk_args).await {
                     Ok(new_result) => {
                         if new_result.is_failure() {
-                            let smaller_failure = Box::pin(shrink_failure(prop, shrunk_args)).await;
+                            let smaller_failure = Box::pin(shrink_failure(test, shrunk_args)).await;
                             
                             if let Some(smaller_result) = smaller_failure {
                                 return Some(smaller_result);

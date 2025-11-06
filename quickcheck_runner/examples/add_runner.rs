@@ -14,4 +14,4 @@ fn add_test(args: AddArgs) -> Result<i64, String> {
 }
 
 // 使用宏创建runner
-quickcheck_runner_main!(add_test, AddArgs, i64, "property_add");
+quickcheck_runner_main!(add_test, AddArgs, i64, "add_test");

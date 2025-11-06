@@ -12,7 +12,7 @@ service TestRunner {
 // 测试执行的请求
 message ExecuteRequest {
   // 要测试的属性的唯一标识符，例如 "property_reverse_list"
-  string property_name = 1;
+  string test_id = 1;
 
   // MsgPack
   bytes test_data = 2;

@@ -4,7 +4,7 @@
 pub struct ExecuteRequest {
     /// 要测试的属性的唯一标识符，例如 "property_reverse_list"
     #[prost(string, tag = "1")]
-    pub property_name: ::prost::alloc::string::String,
+    pub test_id: ::prost::alloc::string::String,
     /// MsgPack
     #[prost(bytes = "vec", tag = "2")]
     pub test_data: ::prost::alloc::vec::Vec<u8>,

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use quickcheck::{quickcheck, Arbitrary, Gen, Property};
+use quickcheck::{quickcheck, Arbitrary, Gen, RemoteTest};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct ReverseSingleArgs {
@@ -22,19 +22,19 @@ struct ReverseSingleTest {
     endpoint: String,
 }
 
-impl Property for ReverseSingleTest {
+impl RemoteTest for ReverseSingleTest {
     type Args = ReverseSingleArgs;
     type Return = bool;
-    const PROPERTY_NAME: &'static str = "property_reverse_single";
+    const TEST_ID: &'static str = "reverse_single_test";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let prop = ReverseSingleTest {
+    let test = ReverseSingleTest {
         endpoint: "http://[::1]:50051".to_string(),
     };
     
-    quickcheck(prop).await;
+    quickcheck(test).await;
     Ok(())
 }

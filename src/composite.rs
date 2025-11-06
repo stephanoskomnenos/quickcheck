@@ -3,45 +3,45 @@ use std::fmt::Debug;
 
 use crate::{Arbitrary, TestResult};
 
-/// A composite property that compares results from multiple Property implementations
-pub struct CompositeProperty<P, F>
+/// A composite test that compares results from multiple RemoteTest implementations
+pub struct CompositeTest<T, F>
 where
-    P: crate::tester::Property + Send + Sync,
-    F: Fn(&P::Args, &[P::Return]) -> bool + Send + Sync + 'static,
+    T: crate::tester::RemoteTest + Send + Sync,
+    F: Fn(&T::Args, &[T::Return]) -> bool + Send + Sync + 'static,
 {
-    props: Vec<P>,
+    tests: Vec<T>,
     comparison: F,
 }
 
-impl<P, F> CompositeProperty<P, F>
+impl<T, F> CompositeTest<T, F>
 where
-    P: crate::tester::Property + Send + Sync,
-    F: Fn(&P::Args, &[P::Return]) -> bool + Send + Sync + 'static,
+    T: crate::tester::RemoteTest + Send + Sync,
+    F: Fn(&T::Args, &[T::Return]) -> bool + Send + Sync + 'static,
 {
-    pub fn new(props: Vec<P>, comparison: F) -> Self {
+    pub fn new(tests: Vec<T>, comparison: F) -> Self {
         Self {
-            props,
+            tests,
             comparison,
         }
     }
 }
 
 #[async_trait]
-impl<P, F> crate::tester::Testable for CompositeProperty<P, F>
+impl<T, F> crate::tester::Testable for CompositeTest<T, F>
 where
-    P: crate::tester::Property + Send + Sync + 'static,
-    P::Args: Arbitrary + Debug + Clone + Send + Sync,
-    F: Fn(&P::Args, &[P::Return]) -> bool + Send + Sync + 'static,
+    T: crate::tester::RemoteTest + Send + Sync + 'static,
+    T::Args: Arbitrary + Debug + Clone + Send + Sync,
+    F: Fn(&T::Args, &[T::Return]) -> bool + Send + Sync + 'static,
 {
-    type Args = P::Args;
+    type Args = T::Args;
     
     async fn result(&self, args: &Self::Args) -> TestResult {
-        async fn execute_properties<P: crate::tester::Property + 'static>(
-            props: &[P],
-            args: &P::Args,
-        ) -> Result<Vec<P::Return>, TestResult> {
+        async fn execute_tests<T: crate::tester::RemoteTest + 'static>(
+            tests: &[T],
+            args: &T::Args,
+        ) -> Result<Vec<T::Return>, TestResult> {
             /// Helper function to extract the return value from a TestResult
-            fn extract_return_value<P: crate::tester::Property>(result: &TestResult) -> Result<P::Return, String> {
+            fn extract_return_value<T: crate::tester::RemoteTest>(result: &TestResult) -> Result<T::Return, String> {
                 if let Some(ref msgpack) = result.return_value {
                     rmp_serde::from_slice(msgpack)
                         .map_err(|e| format!("Failed to deserialize return value: {}", e))
@@ -51,8 +51,8 @@ where
             }
 
             let mut results = Vec::new();
-            for prop in props {
-                let result = prop.result(args).await;
+            for test in tests {
+                let result = test.result(args).await;
                 if result.is_failure() {
                     return Err(TestResult {
                         status: crate::tester::Status::Fail,
@@ -66,7 +66,7 @@ where
             
             let mut return_values = Vec::new();
             for result in &results {
-                match extract_return_value::<P>(result) {
+                match extract_return_value::<T>(result) {
                     Ok(value) => return_values.push(value),
                     Err(e) => {
                         return Err(TestResult {
@@ -81,20 +81,20 @@ where
             Ok(return_values)
         }
 
-        async fn shrink_failure<P, F>( // Correctly placed inside result
-            composite: &CompositeProperty<P, F>,
-            initial_args: P::Args,
+        async fn shrink_failure<T, F>( // Correctly placed inside result
+            composite: &CompositeTest<T, F>,
+            initial_args: T::Args,
         ) -> Option<TestResult>
         where
-            P: crate::tester::Property + Send + Sync + 'static,
-            P::Args: Arbitrary + Debug + Clone + Send + Sync,
-            F: Fn(&P::Args, &[P::Return]) -> bool + Send + Sync + 'static,
+            T: crate::tester::RemoteTest + Send + Sync + 'static,
+            T::Args: Arbitrary + Debug + Clone + Send + Sync,
+            F: Fn(&T::Args, &[T::Return]) -> bool + Send + Sync + 'static,
         {
             println!("Shrinking composite test... Args: {:?}", initial_args);
             let shrunk_values: Vec<_> = initial_args.shrink().collect();
             
             for shrunk_args in shrunk_values {
-                match execute_properties(&composite.props, &shrunk_args).await {
+                match execute_tests(&composite.tests, &shrunk_args).await {
                     Ok(return_values) => {
                         if !(composite.comparison)(&shrunk_args, &return_values) {
                             // This is a smaller failing case due to comparison.
@@ -125,7 +125,7 @@ where
             None
         }
 
-        match execute_properties(&self.props, args).await {
+        match execute_tests(&self.tests, args).await {
             Ok(return_values) => {
                 if (self.comparison)(args, &return_values) {
                     TestResult::passed()
@@ -144,61 +144,61 @@ where
     }
 }
 
-/// Macro for creating composite tests with arbitrary number of properties
+/// Macro for creating composite tests with arbitrary number of tests
 #[macro_export]
 macro_rules! quickcheck_composite {
-    // Base case: single property (though not very useful for comparison)
-    ($prop:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop], |$args, $results| $comparison)).await
+    // Base case: single test (though not very useful for comparison)
+    ($test:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test], |$args, $results| $comparison)).await
     };
     
-    // Two properties (backward compatibility)
-    ($prop1:expr, $prop2:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop1, $prop2], |$args, $results| $comparison)).await
+    // Two tests (backward compatibility)
+    ($test1:expr, $test2:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test1, $test2], |$args, $results| $comparison)).await
     };
     
-    // Three properties
-    ($prop1:expr, $prop2:expr, $prop3:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop1, $prop2, $prop3], |$args, $results| $comparison)).await
+    // Three tests
+    ($test1:expr, $test2:expr, $test3:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test1, $test2, $test3], |$args, $results| $comparison)).await
     };
     
-    // Four properties
-    ($prop1:expr, $prop2:expr, $prop3:expr, $prop4:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop1, $prop2, $prop3, $prop4], |$args, $results| $comparison)).await
+    // Four tests
+    ($test1:expr, $test2:expr, $test3:expr, $test4:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test1, $test2, $test3, $test4], |$args, $results| $comparison)).await
     };
     
-    // Five properties
-    ($prop1:expr, $prop2:expr, $prop3:expr, $prop4:expr, $prop5:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop1, $prop2, $prop3, $prop4, $prop5], |$args, $results| $comparison)).await
+    // Five tests
+    ($test1:expr, $test2:expr, $test3:expr, $test4:expr, $test5:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test1, $test2, $test3, $test4, $test5], |$args, $results| $comparison)).await
     };
     
-    // Six properties
-    ($prop1:expr, $prop2:expr, $prop3:expr, $prop4:expr, $prop5:expr, $prop6:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop1, $prop2, $prop3, $prop4, $prop5, $prop6], |$args, $results| $comparison)).await
+    // Six tests
+    ($test1:expr, $test2:expr, $test3:expr, $test4:expr, $test5:expr, $test6:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test1, $test2, $test3, $test4, $test5, $test6], |$args, $results| $comparison)).await
     };
     
-    // Seven properties
-    ($prop1:expr, $prop2:expr, $prop3:expr, $prop4:expr, $prop5:expr, $prop6:expr, $prop7:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop1, $prop2, $prop3, $prop4, $prop5, $prop6, $prop7], |$args, $results| $comparison)).await
+    // Seven tests
+    ($test1:expr, $test2:expr, $test3:expr, $test4:expr, $test5:expr, $test6:expr, $test7:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test1, $test2, $test3, $test4, $test5, $test6, $test7], |$args, $results| $comparison)).await
     };
     
-    // Eight properties
-    ($prop1:expr, $prop2:expr, $prop3:expr, $prop4:expr, $prop5:expr, $prop6:expr, $prop7:expr, $prop8:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop1, $prop2, $prop3, $prop4, $prop5, $prop6, $prop7, $prop8], |$args, $results| $comparison)).await
+    // Eight tests
+    ($test1:expr, $test2:expr, $test3:expr, $test4:expr, $test5:expr, $test6:expr, $test7:expr, $test8:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test1, $test2, $test3, $test4, $test5, $test6, $test7, $test8], |$args, $results| $comparison)).await
     };
     
-    // Nine properties
-    ($prop1:expr, $prop2:expr, $prop3:expr, $prop4:expr, $prop5:expr, $prop6:expr, $prop7:expr, $prop8:expr, $prop9:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop1, $prop2, $prop3, $prop4, $prop5, $prop6, $prop7, $prop8, $prop9], |$args, $results| $comparison)).await
+    // Nine tests
+    ($test1:expr, $test2:expr, $test3:expr, $test4:expr, $test5:expr, $test6:expr, $test7:expr, $test8:expr, $test9:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test1, $test2, $test3, $test4, $test5, $test6, $test7, $test8, $test9], |$args, $results| $comparison)).await
     };
     
-    // Ten properties (maximum practical limit)
-    ($prop1:expr, $prop2:expr, $prop3:expr, $prop4:expr, $prop5:expr, $prop6:expr, $prop7:expr, $prop8:expr, $prop9:expr, $prop10:expr, |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$prop1, $prop2, $prop3, $prop4, $prop5, $prop6, $prop7, $prop8, $prop9, $prop10], |$args, $results| $comparison)).await
+    // Ten tests (maximum practical limit)
+    ($test1:expr, $test2:expr, $test3:expr, $test4:expr, $test5:expr, $test6:expr, $test7:expr, $test8:expr, $test9:expr, $test10:expr, |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$test1, $test2, $test3, $test4, $test5, $test6, $test7, $test8, $test9, $test10], |$args, $results| $comparison)).await
     };
     
-    // Variadic version using recursion (supports any number of properties)
-    ($($props:expr),+ , |$args:ident, $results:ident| $comparison:expr) => {
-        $crate::quickcheck($crate::CompositeProperty::new(vec![$($props),+], |$args, $results| $comparison)).await
+    // Variadic version using recursion (supports any number of tests)
+    ($($tests:expr),+ , |$args:ident, $results:ident| $comparison:expr) => {
+        $crate::quickcheck($crate::CompositeTest::new(vec![$($tests),+], |$args, $results| $comparison)).await
     };
 }

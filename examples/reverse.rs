@@ -1,6 +1,6 @@
 use quickcheck_macros::Arbitrary;
 use serde::{Deserialize, Serialize};
-use quickcheck::{quickcheck_composite, Property};
+use quickcheck::{quickcheck_composite, RemoteTest};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Arbitrary)]
 struct ReverseArgs {
@@ -11,23 +11,23 @@ struct ReverseTest {
     endpoint: String,
 }
 
-impl Property for ReverseTest {
+impl RemoteTest for ReverseTest {
     type Args = ReverseArgs;
     type Return = Vec<String>;
-    const PROPERTY_NAME: &'static str = "property_reverse";
+    const TEST_ID: &'static str = "reverse_test";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
 
 #[tokio::main]
 async fn main() {
-    let prop1 = ReverseTest {
+    let test1 = ReverseTest {
         endpoint: "http://[::1]:50051".to_string(),
     };
 
-    // let prop2 = ReverseTest {
+    // let test2 = ReverseTest {
     //     endpoint: "http://[::1]:50051".to_string(),
     // };
     
-    // quickcheck_composite!(prop1, prop2, |args, results| { results[0] == results[1] });
-    quickcheck_composite!(prop1, |args, results| { results[0] == args.xs });
+    // quickcheck_composite!(test1, test2, |args, results| { results[0] == results[1] });
+    quickcheck_composite!(test1, |args, results| { results[0] == args.xs });
 }

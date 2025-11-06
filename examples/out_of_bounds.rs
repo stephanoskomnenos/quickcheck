@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use quickcheck::{quickcheck, Arbitrary, Gen, Property};
+use quickcheck::{quickcheck, Arbitrary, Gen, RemoteTest};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct OutOfBoundsArgs {
@@ -30,19 +30,19 @@ struct OutOfBoundsTest {
     endpoint: String,
 }
 
-impl Property for OutOfBoundsTest {
+impl RemoteTest for OutOfBoundsTest {
     type Args = OutOfBoundsArgs;
     type Return = bool;
-    const PROPERTY_NAME: &'static str = "property_out_of_bounds";
+    const TEST_ID: &'static str = "out_of_bounds_test";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let prop = OutOfBoundsTest {
+    let test = OutOfBoundsTest {
         endpoint: "http://[::1]:50051".to_string(),
     };
     
-    quickcheck(prop).await;
+    quickcheck(test).await;
     Ok(())
 }

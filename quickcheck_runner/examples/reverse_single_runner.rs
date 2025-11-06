@@ -25,4 +25,4 @@ fn reverse_single_test(args: ReverseSingleArgs) -> Result<bool, String> {
     Ok(args.xs == reverse(&args.xs))
 }
 
-quickcheck_runner_main!(reverse_single_test, ReverseSingleArgs, bool, "property_reverse_single");
+quickcheck_runner_main!(reverse_single_test, ReverseSingleArgs, bool, "reverse_single_test");

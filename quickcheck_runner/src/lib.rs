@@ -15,7 +15,7 @@ pub trait TestFunction: Send + Sync + 'static {
     type Return: serde::Serialize + Send + Sync + 'static;
     
     /// The unique name for this test function
-    const PROPERTY_NAME: &'static str;
+    const TEST_ID: &'static str;
     
     /// Execute the test function with the given arguments
     fn execute(&self, args: Self::Args) -> Result<Self::Return, String>;
@@ -35,7 +35,7 @@ impl<F: TestFunction> SingleTestRunner<F> {
     pub async fn run(self, address: &str) -> Result<(), Box<dyn std::error::Error>> {
         let addr = address.parse()?;
         
-        println!("Starting gRPC Runner for '{}' on {}", F::PROPERTY_NAME, addr);
+        println!("Starting gRPC Runner for '{}' on {}", F::TEST_ID, addr);
 
         Server::builder()
             .add_service(TestRunnerServer::new(self))
@@ -54,11 +54,11 @@ impl<F: TestFunction> TestRunner for SingleTestRunner<F> {
     ) -> Result<Response<ExecuteResponse>, Status> {
         let req = request.into_inner();
         
-        // Verify this is the correct property
-        if req.property_name != F::PROPERTY_NAME {
+        // Verify this is the correct test
+        if req.test_id != F::TEST_ID {
             return Err(Status::not_found(format!(
-                "Property '{}' not found. This runner only supports '{}'", 
-                req.property_name, F::PROPERTY_NAME
+                "Test '{}' not found. This runner only supports '{}'", 
+                req.test_id, F::TEST_ID
             )));
         }
 
@@ -109,7 +109,7 @@ impl<F: TestFunction> TestRunner for SingleTestRunner<F> {
 /// Convenience macro for creating a binary that runs a test function
 #[macro_export]
 macro_rules! quickcheck_runner_main {
-    ($test_fn:expr, $args_ty:ty, $return_ty:ty, $property_name:expr) => {
+    ($test_fn:expr, $args_ty:ty, $return_ty:ty, $test_id:expr) => {
         use quickcheck_runner::{TestFunction, SingleTestRunner};
         
         struct TestFnWrapper;
@@ -117,7 +117,7 @@ macro_rules! quickcheck_runner_main {
         impl TestFunction for TestFnWrapper {
             type Args = $args_ty;
             type Return = $return_ty;
-            const PROPERTY_NAME: &'static str = $property_name;
+            const TEST_ID: &'static str = $test_id;
             
             fn execute(&self, args: Self::Args) -> Result<Self::Return, String> {
                 $test_fn(args)

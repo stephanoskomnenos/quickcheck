@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::ops::Bound::{self, *};
 use serde::{Deserialize, Serialize};
-use quickcheck::{quickcheck, Arbitrary, Gen, Property};
+use quickcheck::{quickcheck, Arbitrary, Gen, RemoteTest};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct BTreeSetRangeArgs {
@@ -36,19 +36,19 @@ struct BTreeSetRangeTest {
     endpoint: String,
 }
 
-impl Property for BTreeSetRangeTest {
+impl RemoteTest for BTreeSetRangeTest {
     type Args = BTreeSetRangeArgs;
     type Return = bool;
-    const PROPERTY_NAME: &'static str = "property_btree_set_range";
+    const TEST_ID: &'static str = "btree_set_range_test";
     fn endpoint(&self) -> &str { &self.endpoint }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let prop = BTreeSetRangeTest {
+    let test = BTreeSetRangeTest {
         endpoint: "http://[::1]:50051".to_string(),
     };
     
-    quickcheck(prop).await;
+    quickcheck(test).await;
     Ok(())
 }
