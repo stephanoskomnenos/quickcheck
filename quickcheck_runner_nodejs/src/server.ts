@@ -1,5 +1,6 @@
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
+import { encode, decode } from '@msgpack/msgpack';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -49,8 +50,8 @@ function createTestServer(testFunction: TestFunction) {
       }
       
       try {
-        // 解析 JSON 参数
-        const args = JSON.parse(request.test_data_json);
+        // 解析 MessagePack 参数
+        const args = decode(request.test_data);
         
         // 执行测试函数
         const result = testFunction.execute(args);
@@ -59,14 +60,14 @@ function createTestServer(testFunction: TestFunction) {
         callback(null, {
           status: TestStatus.PASSED,
           failure_detail: null,
-          return_value_json: JSON.stringify(result)
+          return_value: encode(result)
         });
       } catch (error) {
         // 返回失败响应
         callback(null, {
           status: TestStatus.FAILED,
           failure_detail: error instanceof Error ? error.message : String(error),
-          return_value_json: null
+          return_value: null
         });
       }
     }
@@ -104,7 +105,13 @@ const addTest: TestFunction = {
 const reverseTest: TestFunction = {
   propertyName: 'property_reverse',
   execute(args: { xs: string[] }) {
-    return args.xs.slice().reverse().reverse();
+    const result = args.xs.slice().reverse().reverse();
+
+    // 故意设置的错误
+    if (result.length % 2 === 1) {
+      result[0] = "Here is an error";
+    }
+    return result;
   }
 };
 

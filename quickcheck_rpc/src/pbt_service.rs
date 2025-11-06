@@ -5,12 +5,9 @@ pub struct ExecuteRequest {
     /// 要测试的属性的唯一标识符，例如 "property_reverse_list"
     #[prost(string, tag = "1")]
     pub property_name: ::prost::alloc::string::String,
-    /// 生成的测试输入数据。
-    /// 这是最棘手的部分！我们使用 bytes 来存储序列化后的数据。
-    /// 序列化格式可以是 JSON、MessagePack 或甚至是原始 Protobuf。
-    /// JSON 是最简单和最灵活的起点。
-    #[prost(string, tag = "2")]
-    pub test_data_json: ::prost::alloc::string::String,
+    /// MsgPack
+    #[prost(bytes = "vec", tag = "2")]
+    pub test_data: ::prost::alloc::vec::Vec<u8>,
 }
 /// 测试执行的响应
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -20,9 +17,9 @@ pub struct ExecuteResponse {
     /// 如果测试失败，这里包含详细信息，例如断言错误、堆栈跟踪等。
     #[prost(string, optional, tag = "2")]
     pub failure_detail: ::core::option::Option<::prost::alloc::string::String>,
-    /// 测试函数的返回值，序列化为JSON字符串，用于复合测试比较
-    #[prost(string, optional, tag = "3")]
-    pub return_value_json: ::core::option::Option<::prost::alloc::string::String>,
+    /// 测试函数的返回值，序列化为MsgPack，用于复合测试比较
+    #[prost(bytes = "vec", optional, tag = "3")]
+    pub return_value: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 /// Nested message and enum types in `ExecuteResponse`.
 pub mod execute_response {

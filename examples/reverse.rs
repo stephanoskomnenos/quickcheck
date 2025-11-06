@@ -18,8 +18,8 @@ impl Property for ReverseTest {
     fn endpoint(&self) -> &str { &self.endpoint }
 }
 
-#[tokio::test]
-async fn test_revrev() {
+#[tokio::main]
+async fn main() {
     let prop1 = ReverseTest {
         endpoint: "http://[::1]:50051".to_string(),
     };

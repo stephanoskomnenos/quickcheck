@@ -123,7 +123,7 @@ pub struct TestResult {
     pub status: Status,
     pub arguments: Vec<String>,
     pub err: Option<String>,
-    pub return_value: Option<String>, // JSON string of the return value for composite tests
+    pub return_value: Option<Vec<u8>>, // JSON string of the return value for composite tests
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
@@ -288,12 +288,12 @@ where
                 TestRunnerClient::connect(prop.endpoint().to_string())
                     .await
                     .map_err(|e| e.to_string())?;
-            let args_json =
-                serde_json::to_string(args).map_err(|e| e.to_string())?;
+            let args_msgpack =
+                rmp_serde::to_vec_named(args).map_err(|e| e.to_string())?;
             // println!("args_json: {:#?}", args_json);
             let request = tonic::Request::new(ExecuteRequest {
                 property_name: Pr::PROPERTY_NAME.to_string(),
-                test_data_json: args_json,
+                test_data: args_msgpack,
             });
             let response = client
                 .execute(request)
@@ -307,7 +307,7 @@ where
                 status: proto_status.into(),
                 arguments: vec![format!("{:?}", args)],
                 err: response.failure_detail,
-                return_value: response.return_value_json,
+                return_value: response.return_value,
             })
         }
 

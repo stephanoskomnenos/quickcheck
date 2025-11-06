@@ -1,6 +1,5 @@
 use std::panic::{self, AssertUnwindSafe};
 use serde::Deserialize;
-use serde_json::Value;
 use tonic::{transport::Server, Request, Response, Status};
 use quickcheck_rpc::{
     execute_response, test_runner_server::{TestRunner, TestRunnerServer}, 
@@ -64,10 +63,7 @@ impl<F: TestFunction> TestRunner for SingleTestRunner<F> {
         }
 
         // Deserialize the arguments
-        let args_value: Value = serde_json::from_str(&req.test_data_json)
-            .map_err(|e| Status::invalid_argument(format!("Failed to parse JSON: {}", e)))?;
-        
-        let args: F::Args = serde_json::from_value(args_value)
+        let args: F::Args = rmp_serde::from_slice(&req.test_data)
             .map_err(|e| Status::invalid_argument(format!("Failed to deserialize arguments: {}", e)))?;
         
         // Execute the test function with panic catching
@@ -76,12 +72,12 @@ impl<F: TestFunction> TestRunner for SingleTestRunner<F> {
         }));
 
         // Convert the result to the gRPC ExecuteResponse
-        let (status, failure_detail, return_value_json) = match result {
+        let (status, failure_detail, return_value) = match result {
             Ok(Ok(return_value)) => {
-                // Success case - convert return value to JSON string
-                let return_json = serde_json::to_string(&return_value)
+                // Success case - convert return value to MessagePack
+                let return_value = rmp_serde::to_vec_named(&return_value)
                     .map_err(|e| Status::internal(format!("Failed to serialize return value: {}", e)))?;
-                (execute_response::TestStatus::Passed, None, Some(return_json))
+                (execute_response::TestStatus::Passed, None, Some(return_value))
             }
             Ok(Err(error_msg)) => {
                 // Normal error case - return error details
@@ -103,7 +99,7 @@ impl<F: TestFunction> TestRunner for SingleTestRunner<F> {
         let response = ExecuteResponse {
             status: status.into(),
             failure_detail,
-            return_value_json,
+            return_value,
         };
 
         Ok(Response::new(response))

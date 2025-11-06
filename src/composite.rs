@@ -127,8 +127,8 @@ where
 
 /// Helper function to extract the return value from a TestResult
 fn extract_return_value<P: crate::tester::Property>(result: &TestResult) -> Result<P::Return, String> {
-    if let Some(ref json_str) = result.return_value {
-        serde_json::from_str(json_str)
+    if let Some(ref msgpack) = result.return_value {
+        rmp_serde::from_slice(msgpack)
             .map_err(|e| format!("Failed to deserialize return value: {}", e))
     } else {
         Err("No return value available".to_string())
