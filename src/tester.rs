@@ -15,7 +15,7 @@ use crate::{
     Arbitrary, Gen,
 };
 
-/// The main `QuickCheck` type for setting configuration and running `QuickCheck`.
+/// The main `QuickCheck` type for setting configuration and running `QuickCheck`. 
 pub struct QuickCheck {
     tests: u64,
     max_tests: u64,
@@ -100,7 +100,16 @@ impl QuickCheck {
 
         let n_tests_passed = match self.quicktest(f).await {
             Ok(n_tests_passed) => n_tests_passed,
-            Err(result) => panic!("{}", result.failed_msg()),
+            Err(result) => {
+                if result.is_error() { // is_error() checks for TestFailure::Runtime
+                    // It's a runtime error, so we want the stack trace.
+                    panic!("{}", result.failed_msg());
+                } else {
+                    // It's a property or comparison failure, so exit cleanly.
+                    eprintln!("{}", result.failed_msg());
+                    std::process::exit(1);
+                }
+            }
         };
 
         if n_tests_passed >= self.min_tests_passed {
@@ -118,12 +127,20 @@ pub async fn quickcheck<A: Testable + Send + Sync>(a: A) {
 }
 
 // --- TestResult and Status types are kept for reporting ---
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum TestFailure {
+    Property(Option<String>), // Detail from runner
+    Comparison,               // No extra detail needed, or a default message
+    Runtime(String),          // Detail of the runtime error
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct TestResult {
     pub status: Status,
     pub arguments: Vec<String>,
-    pub err: Option<String>,
-    pub return_value: Option<Vec<u8>>, // JSON string of the return value for composite tests
+    #[serde(default)] // Ensure default is handled for deserialization
+    pub failure: Option<TestFailure>, // New field, replaces `err` and `err_type`
+    pub return_value: Option<Vec<u8>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
@@ -158,7 +175,7 @@ impl TestResult {
     /// Produces a test result that indicates failure from a runtime error.
     pub fn error<S: Into<String>>(msg: S) -> TestResult {
         let mut r = TestResult::from_bool(false);
-        r.err = Some(msg.into());
+        r.failure = Some(TestFailure::Runtime(msg.into()));
         r
     }
 
@@ -170,7 +187,7 @@ impl TestResult {
         TestResult {
             status: Discard,
             arguments: vec![],
-            err: None,
+            failure: None,
             return_value: None,
         }
     }
@@ -182,7 +199,7 @@ impl TestResult {
         TestResult {
             status: if b { Pass } else { Fail },
             arguments: vec![],
-            err: None,
+            failure: if b { None } else { Some(TestFailure::Property(None)) },
             return_value: None,
         }
     }
@@ -212,15 +229,24 @@ impl TestResult {
     /// Returns `true` if and only if this test result describes a failing
     /// test as a result of a run time error.
     pub fn is_error(&self) -> bool {
-        self.is_failure() && self.err.is_some()
+        matches!(self.failure, Some(TestFailure::Runtime(_)))
     }
     fn failed_msg(&self) -> String {
         let arguments_msg = format!("Arguments: ({})", self.arguments.join(", "));
-        match self.err {
-            None => format!("[quickcheck] TEST FAILED. {arguments_msg}"),
-            Some(ref err) => format!(
-                "[quickcheck] TEST FAILED (runtime error). {arguments_msg}\nError: {err}"
+        match &self.failure {
+            Some(TestFailure::Runtime(err_msg)) => format!(
+                "[quickcheck] TEST FAILED (runtime error). {arguments_msg}\nError: {err_msg}"
             ),
+            Some(TestFailure::Property(Some(err_msg))) => format!(
+                "[quickcheck] TEST FAILED. {arguments_msg}\nError: {err_msg}"
+            ),
+            Some(TestFailure::Property(None)) => format!(
+                "[quickcheck] TEST FAILED. {arguments_msg}"
+            ),
+            Some(TestFailure::Comparison) => format!(
+                "[quickcheck] TEST FAILED (comparison). {arguments_msg}\nError: Comparison function returned false"
+            ),
+            None => format!("[quickcheck] TEST PASSED. {arguments_msg}"), // Should not happen if status is Fail
         }
     }
 }
@@ -306,7 +332,9 @@ where
             Ok(TestResult {
                 status: proto_status.into(),
                 arguments: vec![format!("{:?}", args)],
-                err: response.failure_detail,
+                failure: if proto_status == ProtoStatus::Failed {
+                    Some(TestFailure::Property(response.failure_detail))
+                } else { None },
                 return_value: response.return_value,
             })
         }
@@ -320,16 +348,27 @@ where
             let shrunk_values: Vec<_> = initial_args.shrink().collect();
             
             for shrunk_args in shrunk_values {
-                if let Ok(new_result) = execute_remote(prop, &shrunk_args).await {
-                    if new_result.is_failure() {
-                        // Use boxing for recursive async call
-                        let smaller_failure = Box::pin(shrink_failure(prop, shrunk_args)).await;
-                        
-                        if let Some(smaller_result) = smaller_failure {
-                            return Some(smaller_result);
-                        } else {
-                            return Some(new_result);
+                match execute_remote(prop, &shrunk_args).await {
+                    Ok(new_result) => {
+                        if new_result.is_failure() {
+                            let smaller_failure = Box::pin(shrink_failure(prop, shrunk_args)).await;
+                            
+                            if let Some(smaller_result) = smaller_failure {
+                                return Some(smaller_result);
+                            } else {
+                                return Some(new_result);
+                            }
                         }
+                    }
+                    Err(e) => {
+                        // A runtime error occurred during shrinking.
+                        // This is a candidate for the smallest failure.
+                        return Some(TestResult {
+                            status: Fail,
+                            arguments: vec![format!("{:?}", shrunk_args)],
+                            failure: Some(TestFailure::Runtime(format!("Tester failed to call runner: {}", e))),
+                            return_value: None,
+                        });
                     }
                 }
             }
@@ -348,7 +387,7 @@ where
             Err(e) => TestResult {
                 status: Fail,
                 arguments: vec![format!("{:?}", args)],
-                err: Some(format!("Tester failed to call runner: {}", e)),
+                failure: Some(TestFailure::Runtime(format!("Tester failed to call runner: {}", e))),
                 return_value: None,
             },
         }

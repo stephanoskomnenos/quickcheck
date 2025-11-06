@@ -40,6 +40,16 @@ where
             props: &[P],
             args: &P::Args,
         ) -> Result<Vec<P::Return>, TestResult> {
+            /// Helper function to extract the return value from a TestResult
+            fn extract_return_value<P: crate::tester::Property>(result: &TestResult) -> Result<P::Return, String> {
+                if let Some(ref msgpack) = result.return_value {
+                    rmp_serde::from_slice(msgpack)
+                        .map_err(|e| format!("Failed to deserialize return value: {}", e))
+                } else {
+                    Err("No return value available".to_string())
+                }
+            }
+
             let mut results = Vec::new();
             for prop in props {
                 let result = prop.result(args).await;
@@ -47,10 +57,7 @@ where
                     return Err(TestResult {
                         status: crate::tester::Status::Fail,
                         arguments: vec![format!("{:?}", args)],
-                        err: Some(format!(
-                            "Property execution failed: {}",
-                            result.err.unwrap_or_else(|| "Unknown error".to_string())
-                        )),
+                        failure: result.failure, // Propagate the failure
                         return_value: None,
                     });
                 }
@@ -65,7 +72,7 @@ where
                         return Err(TestResult {
                             status: crate::tester::Status::Fail,
                             arguments: vec![format!("{:?}", args)],
-                            err: Some(format!("Failed to extract return values: {}", e)),
+                            failure: Some(crate::tester::TestFailure::Runtime(format!("Failed to extract return values: {}", e))),
                             return_value: None,
                         });
                     }
@@ -74,7 +81,7 @@ where
             Ok(return_values)
         }
 
-        async fn shrink_failure<P, F>(
+        async fn shrink_failure<P, F>( // Correctly placed inside result
             composite: &CompositeProperty<P, F>,
             initial_args: P::Args,
         ) -> Option<TestResult>
@@ -87,19 +94,31 @@ where
             let shrunk_values: Vec<_> = initial_args.shrink().collect();
             
             for shrunk_args in shrunk_values {
-                if let Ok(return_values) = execute_properties(&composite.props, &shrunk_args).await {
-                    if !(composite.comparison)(&shrunk_args, &return_values) {
-                        let smaller_failure = Box::pin(shrink_failure(composite, shrunk_args.clone())).await;
-                        if let Some(smaller_result) = smaller_failure {
-                            return Some(smaller_result);
-                        } else {
-                            return Some(TestResult {
-                                status: crate::tester::Status::Fail,
-                                arguments: vec![format!("{:?}", shrunk_args)],
-                                err: Some("Comparison function returned false".to_string()),
-                                return_value: None,
-                            });
+                match execute_properties(&composite.props, &shrunk_args).await {
+                    Ok(return_values) => {
+                        if !(composite.comparison)(&shrunk_args, &return_values) {
+                            // This is a smaller failing case due to comparison.
+                            // Recurse to see if we can find an even smaller one.
+                            let smaller_failure = Box::pin(shrink_failure(composite, shrunk_args.clone())).await;
+                            if let Some(smaller_result) = smaller_failure {
+                                return Some(smaller_result);
+                            } else {
+                                // This is the smallest we could find.
+                                return Some(TestResult {
+                                    status: crate::tester::Status::Fail,
+                                    arguments: vec![format!("{:?}", shrunk_args)],
+                                    failure: Some(crate::tester::TestFailure::Comparison),
+                                    return_value: None,
+                                });
+                            }
                         }
+                    }
+                    Err(err_result) => {
+                        // A non-comparison failure occurred during shrinking (e.g., runtime error).
+                        // This is a candidate for the smallest failure.
+                        // We should not continue shrinking, as the nature of the failure has changed.
+                        // We return this error immediately as the new smallest failure.
+                        return Some(err_result);
                     }
                 }
             }
@@ -115,23 +134,13 @@ where
                     shrink_failure(self, args.clone()).await.unwrap_or_else(|| TestResult {
                         status: crate::tester::Status::Fail,
                         arguments: vec![format!("{:?}", args)],
-                        err: Some("Comparison function returned false".to_string()),
+                        failure: Some(crate::tester::TestFailure::Comparison),
                         return_value: None,
                     })
                 }
             }
             Err(result) => result,
         }
-    }
-}
-
-/// Helper function to extract the return value from a TestResult
-fn extract_return_value<P: crate::tester::Property>(result: &TestResult) -> Result<P::Return, String> {
-    if let Some(ref msgpack) = result.return_value {
-        rmp_serde::from_slice(msgpack)
-            .map_err(|e| format!("Failed to deserialize return value: {}", e))
-    } else {
-        Err("No return value available".to_string())
     }
 }
 
